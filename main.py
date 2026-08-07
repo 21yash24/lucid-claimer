@@ -31,15 +31,21 @@ client = discord.Client()
 
 # Set of already claimed codes to prevent duplicate claims
 claimed_codes = set()
+successful_claims = 0
+MAX_CLAIMS = 1  # Auto-stop after 1 successful claim for maximum stealth & safety
 
 @client.event
 async def on_ready():
     logger.info(f"✅ Discord Listener Connected as: {client.user} (ID: {client.user.id})")
     logger.info(f"👀 Monitoring Target Channel IDs: {', '.join(config.TARGET_CHANNEL_IDS)}")
-    logger.info(f"👥 Configured Accounts to Claim: {len(config.ACCOUNT_TOKENS)}")
+    logger.info(f"🛡️ Stealth Mode Active: Auto-stopping safely after {MAX_CLAIMS} successful claim!")
 
 @client.event
 async def on_message(message):
+    global successful_claims
+    if successful_claims >= MAX_CLAIMS:
+        return
+
     # Log incoming chat messages from designated target channel IDs
     if str(message.channel.id) in config.TARGET_CHANNEL_IDS:
         logger.info(f"💬 [Chat] {message.author}: {message.content[:80]}")
@@ -51,14 +57,21 @@ async def on_message(message):
         codes = parse_discord_message_all(message.content, embeds_dict)
 
         if codes:
-            # Shuffle codes so we hit codes from the middle & bottom first (where competition is zero!)
             random.shuffle(codes)
 
             for code in codes:
-                if code not in claimed_codes:
+                if code not in claimed_codes and successful_claims < MAX_CLAIMS:
                     claimed_codes.add(code)
-                    # Execute instant multi-account claim concurrently for each code
-                    asyncio.create_task(claimer.claim_all_accounts(code))
+                    results = await claimer.claim_all_accounts(code)
+                    
+                    # Check if any claim succeeded
+                    for res in results:
+                        if isinstance(res, dict) and res.get("success"):
+                            successful_claims += 1
+                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})! Auto-stopping script to stay 100% safe & stealthy.")
+                            await client.close()
+                            return
+
 
 
 

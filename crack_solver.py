@@ -184,8 +184,12 @@ class MastermindSolver:
 
                 if is_active:
                     logger.info("🚨 NEW EVENT DROPPED IN LUCID APP '🎁 GIVEAWAY' SECTION! Launching Mastermind solver...")
-                    await self.solve(candidate_pool)
+                    won_code = await self.solve(candidate_pool)
+                    if won_code:
+                        logger.info("🎉 GIVEAWAY GAME WON & CLAIMED! Auto-stopping script to stay 100% safe & stealthy.")
+                        return
                     logger.info("🏁 Event finished! Returning to 24/7 Giveaway section watcher...")
+
                 else:
                     if check_count % 5 == 1:
                         logger.info("⏳ [Lucid App '🎁 Giveaway' Section] Status: Inactive / Event Ended. Watching for next drop...")
