@@ -1,0 +1,7 @@
+# Environment variables containing secret tokens
+.env
+
+# Python virtual environment & cache
+venv/
+__pycache__/
+*.pyc
