@@ -34,14 +34,15 @@ claimed_codes = set()
 @client.event
 async def on_ready():
     logger.info(f"✅ Discord Listener Connected as: {client.user} (ID: {client.user.id})")
-    logger.info(f"👀 Monitoring Target Channel ID: {config.TARGET_CHANNEL_ID}")
+    logger.info(f"👀 Monitoring Target Channel IDs: {', '.join(config.TARGET_CHANNEL_IDS)}")
     logger.info(f"👥 Configured Accounts to Claim: {len(config.ACCOUNT_TOKENS)}")
 
 @client.event
 async def on_message(message):
-    # Log incoming chat messages from the target channel to the console
-    if str(message.channel.id) == config.TARGET_CHANNEL_ID:
+    # Log incoming chat messages from designated target channel IDs
+    if str(message.channel.id) in config.TARGET_CHANNEL_IDS:
         logger.info(f"💬 [Chat] {message.author}: {message.content[:80]}")
+
 
         # Convert embeds to list of dicts for parsing
         embeds_dict = [embed.to_dict() for embed in message.embeds] if message.embeds else []
