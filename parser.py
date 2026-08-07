@@ -2,13 +2,11 @@ import re
 from typing import List, Optional
 
 # Regular expressions for common giveaway drop patterns
-# 1. Lucid Box keys starting with LBOX e.g. "LBOX1234", "LBOX-X7Y9", "LBOX_9921"
+# Strictly match ONLY codes starting with LBOX (e.g. LBOX1234, LBOX-VIP-2026, LBOX_9921)
 CODE_PATTERNS = [
-    re.compile(r'\bLBOX[A-Z0-9_-]{3,24}\b', re.IGNORECASE),                         # Priority 1: LBOX... keys
-    re.compile(r'\b[A-Z0-9]{4,6}-[A-Z0-9]{4,6}-[A-Z0-9]{4,6}\b', re.IGNORECASE), # e.g. XXXX-YYYY-ZZZZ
-    re.compile(r'\b(?:CODE|PROMO|DROP|GIVEAWAY|CLAIM|KEY|BOX):\s*([A-Z0-9_-]{4,24})\b', re.IGNORECASE),
-    re.compile(r'\b[A-Z0-9]{8,20}\b'), # Standalone 8-20 character uppercase alphanumeric codes
+    re.compile(r'\bLBOX[A-Z0-9_-]{2,30}\b', re.IGNORECASE),
 ]
+
 
 
 # 2. URLs / Drop links e.g. https://lucidtrading.com/claim?code=XYZ
