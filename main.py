@@ -16,6 +16,7 @@ aiohttp.TCPConnector.__init__ = _patched_tcp_init
 
 import discord
 import config
+import random
 from parser import parse_discord_message_all
 from claimer import MultiAccountClaimer
 
@@ -43,18 +44,22 @@ async def on_message(message):
     if str(message.channel.id) in config.TARGET_CHANNEL_IDS:
         logger.info(f"💬 [Chat] {message.author}: {message.content[:80]}")
 
-
         # Convert embeds to list of dicts for parsing
         embeds_dict = [embed.to_dict() for embed in message.embeds] if message.embeds else []
 
         # Parse message content and embeds for ALL giveaway drop codes
         codes = parse_discord_message_all(message.content, embeds_dict)
 
-        for code in codes:
-            if code not in claimed_codes:
-                claimed_codes.add(code)
-                # Execute instant multi-account claim concurrently for each code
-                asyncio.create_task(claimer.claim_all_accounts(code))
+        if codes:
+            # Shuffle codes so we hit codes from the middle & bottom first (where competition is zero!)
+            random.shuffle(codes)
+
+            for code in codes:
+                if code not in claimed_codes:
+                    claimed_codes.add(code)
+                    # Execute instant multi-account claim concurrently for each code
+                    asyncio.create_task(claimer.claim_all_accounts(code))
+
 
 
 async def main():
