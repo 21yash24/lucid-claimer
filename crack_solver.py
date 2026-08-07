@@ -143,21 +143,63 @@ class MastermindSolver:
                 # Respect 2.0 second cooldown between guesses
                 await asyncio.sleep(2.05)
 
+    async def check_event_status(self, session: aiohttp.ClientSession) -> Tuple[bool, dict]:
+        """
+        Polls the Lucid giveaway status endpoint to check if an active event is live.
+        """
+        status_urls = [
+            "https://dash.lucidtrading.com/api/rewards/crate-status",
+            "https://dash.lucidtrading.com/api/rewards/active-promos",
+            "https://dash.lucidtrading.com/api/giveaway/status"
+        ]
+        
+        for url in status_urls:
+            try:
+                async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # Check if an event is active or has spots left
+                        is_active = data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active"
+                        return is_active, data
+            except Exception:
+                continue
+        return False, {}
+
+    async def watch_and_solve(self, candidate_pool: List[str]):
+        """
+        24/7 Watcher: Waits silently until a giveaway drops on the Lucid app,
+        then instantly launches the Mastermind solver!
+        """
+        logger.info("👀 Watching Lucid App for new 'Crack the Code' giveaway drops 24/7...")
+        connector = aiohttp.TCPConnector(limit=10, ssl=False)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+            while True:
+                is_active, status_data = await self.check_event_status(session)
+
+                if is_active:
+                    logger.info("🚨 NEW GIVEAWAY EVENT DROPPED ON LUCID APP! Launching Mastermind solver...")
+                    await self.solve(candidate_pool)
+                    logger.info("🏁 Event finished! Returning to 24/7 event watcher...")
+                else:
+                    logger.info("⏳ [Lucid App Status] Event inactive / ended. Waiting for next drop...")
+                
+                # Poll status every 2 seconds
+                await asyncio.sleep(2.0)
+
 async def main():
     if not config.ACCOUNT_TOKENS:
         logger.error("ACCOUNT_TOKENS is missing in .env")
         return
 
-    # Generate initial pool of 5-digit combinations (sample pool for quick execution)
     logger.info("Generating candidate 5-character combinations...")
-    # Pre-generate candidate set
     pool = [''.join(p) for p in [random.choices(CHAR_SET, k=5) for _ in range(5000)]]
-    
+
     solver = MastermindSolver(
         token=config.ACCOUNT_TOKENS[0],
         cookie=config.BROWSER_COOKIE
     )
-    await solver.solve(pool)
+    await solver.watch_and_solve(pool)
 
 if __name__ == "__main__":
     asyncio.run(main())
