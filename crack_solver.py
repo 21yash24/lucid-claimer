@@ -145,7 +145,8 @@ class MastermindSolver:
 
     async def check_event_status(self, session: aiohttp.ClientSession) -> Tuple[bool, dict]:
         """
-        Polls the Lucid giveaway status endpoint to check if an active event is live.
+        Polls the Lucid Mobile App '🎁 Giveaway' section status API.
+        Returns (is_active, status_data)
         """
         status_urls = [
             "https://dash.lucidtrading.com/api/rewards/crate-status",
@@ -159,7 +160,7 @@ class MastermindSolver:
                     if resp.status == 200:
                         data = await resp.json()
                         # Check if an event is active or has spots left
-                        is_active = data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active"
+                        is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
                         return is_active, data
             except Exception:
                 continue
@@ -167,22 +168,25 @@ class MastermindSolver:
 
     async def watch_and_solve(self, candidate_pool: List[str]):
         """
-        24/7 Watcher: Waits silently until a giveaway drops on the Lucid app,
-        then instantly launches the Mastermind solver!
+        24/7 App Watcher: Monitors the Lucid App '🎁 Giveaway' section continuously.
+        Only starts guessing when a new giveaway event goes live!
         """
-        logger.info("👀 Watching Lucid App for new 'Crack the Code' giveaway drops 24/7...")
+        logger.info("👀 [Tool 2] Watching Lucid Mobile App '🎁 Giveaway' Section 24/7...")
         connector = aiohttp.TCPConnector(limit=10, ssl=False)
 
         async with aiohttp.ClientSession(connector=connector) as session:
+            check_count = 0
             while True:
+                check_count += 1
                 is_active, status_data = await self.check_event_status(session)
 
                 if is_active:
-                    logger.info("🚨 NEW GIVEAWAY EVENT DROPPED ON LUCID APP! Launching Mastermind solver...")
+                    logger.info("🚨 NEW EVENT DROPPED IN LUCID APP '🎁 GIVEAWAY' SECTION! Launching Mastermind solver...")
                     await self.solve(candidate_pool)
-                    logger.info("🏁 Event finished! Returning to 24/7 event watcher...")
+                    logger.info("🏁 Event finished! Returning to 24/7 Giveaway section watcher...")
                 else:
-                    logger.info("⏳ [Lucid App Status] Event inactive / ended. Waiting for next drop...")
+                    if check_count % 5 == 1:
+                        logger.info("⏳ [Lucid App '🎁 Giveaway' Section] Status: Inactive / Event Ended. Watching for next drop...")
                 
                 # Poll status every 2 seconds
                 await asyncio.sleep(2.0)
@@ -203,3 +207,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
