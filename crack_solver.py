@@ -148,10 +148,11 @@ class MastermindSolver:
         Polls the Lucid Mobile App '🎁 Giveaway' section status API.
         Returns (is_active, status_data)
         """
+        # Strictly mobile app Giveaway section API endpoints (NOT web dashboard crate endpoints)
         status_urls = [
-            "https://dash.lucidtrading.com/api/rewards/crate-status",
-            "https://dash.lucidtrading.com/api/rewards/active-promos",
-            "https://dash.lucidtrading.com/api/giveaway/status"
+            "https://dash.lucidtrading.com/api/giveaway/status",
+            "https://dash.lucidtrading.com/api/mobile/v1/giveaway/status",
+            "https://api.lucidtrading.com/v1/giveaway/status"
         ]
         
         for url in status_urls:
@@ -159,12 +160,13 @@ class MastermindSolver:
                 async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        # Check if an event is active or has spots left
+                        # Check if a Crack the Code event is active or has spots left
                         is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
                         return is_active, data
             except Exception:
                 continue
         return False, {}
+
 
     async def watch_and_solve(self, candidate_pool: List[str]):
         """
