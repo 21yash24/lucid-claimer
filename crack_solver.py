@@ -48,6 +48,15 @@ def filter_candidates(candidates: List[str], guess: str, correct_spot: int, wron
             filtered.append(cand)
     return filtered
 
+# Candidate API endpoints for Lucid Mobile App Giveaway feature
+MOBILE_ENDPOINTS = [
+    "https://dash.lucidtrading.com/api/rewards/guess",
+    "https://dash.lucidtrading.com/api/giveaway/guess",
+    "https://dash.lucidtrading.com/api/rewards/crack-code",
+    "https://dash.lucidtrading.com/api/mobile/v1/giveaway/guess",
+    "https://api.lucidtrading.com/v1/giveaway/guess"
+]
+
 class MastermindSolver:
     """
     Automated Mastermind Code Cracker for Lucid Trading 5-digit giveaway events.
@@ -55,15 +64,16 @@ class MastermindSolver:
     def __init__(self, token: str, cookie: str, endpoint_url: str = None):
         self.token = token if token.startswith("Bearer ") else f"Bearer {token}"
         self.cookie = cookie
-        self.api_url = endpoint_url or "https://dash.lucidtrading.com/api/rewards/guess"
+        self.api_url = endpoint_url or MOBILE_ENDPOINTS[0]
         self.headers = {
             "Authorization": self.token,
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "User-Agent": "LucidApp/90.0 (Android; Mobile)",
             "Origin": "https://dash.lucidtrading.com",
             "Referer": "https://dash.lucidtrading.com/",
             "Cookie": self.cookie
         }
+
 
     async def submit_guess(self, session: aiohttp.ClientSession, guess_code: str) -> dict:
         """
