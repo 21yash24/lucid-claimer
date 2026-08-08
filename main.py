@@ -57,9 +57,11 @@ async def on_message(message):
         codes = parse_discord_message_all(message.content, embeds_dict)
 
         if codes:
-            random.shuffle(codes)
+            # Take only 2 codes maximum from the message to prevent rate limit bursts (HTTP 429)
+            selected_codes = random.sample(codes, min(2, len(codes)))
+            logger.info(f"🎲 Selected {len(selected_codes)} code(s) out of {len(codes)} to attempt safely.")
 
-            for code in codes:
+            for code in selected_codes:
                 if code not in claimed_codes and successful_claims < MAX_CLAIMS:
                     claimed_codes.add(code)
                     results = await claimer.claim_all_accounts(code)
@@ -68,9 +70,13 @@ async def on_message(message):
                     for res in results:
                         if isinstance(res, dict) and res.get("success"):
                             successful_claims += 1
-                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})! Auto-stopping script to stay 100% safe & stealthy.")
+                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})! Auto-stopping script.")
                             await client.close()
                             return
+                    
+                    # Wait 1.5 seconds between attempts to prevent rate limit (HTTP 429)
+                    await asyncio.sleep(1.5)
+
 
 
 
