@@ -140,8 +140,9 @@ class MastermindSolver:
                     if current_candidates:
                         next_guess = random.choice(current_candidates)
 
-                # Respect 2.0 second cooldown between guesses
-                await asyncio.sleep(2.05)
+                # 1.0 second delay between guesses for maximum speed
+                await asyncio.sleep(1.0)
+
 
     async def check_event_status(self, session: aiohttp.ClientSession) -> Tuple[bool, dict]:
         """
