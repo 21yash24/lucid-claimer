@@ -32,13 +32,13 @@ client = discord.Client()
 # Set of already claimed codes to prevent duplicate claims
 claimed_codes = set()
 successful_claims = 0
-MAX_CLAIMS = 1  # Auto-stop after 1 successful claim for maximum stealth & safety
+MAX_CLAIMS = 2  # Target 2 successful claims before auto-stopping
 
 @client.event
 async def on_ready():
     logger.info(f"✅ Discord Listener Connected as: {client.user} (ID: {client.user.id})")
     logger.info(f"👀 Monitoring Target Channel IDs: {', '.join(config.TARGET_CHANNEL_IDS)}")
-    logger.info(f"🛡️ Stealth Mode Active: Auto-stopping safely after {MAX_CLAIMS} successful claim!")
+    logger.info(f"🛡️ Target: {MAX_CLAIMS} successful claims before auto-stop.")
 
 @client.event
 async def on_message(message):
@@ -57,9 +57,9 @@ async def on_message(message):
         codes = parse_discord_message_all(message.content, embeds_dict)
 
         if codes:
-            # Take only 2 codes maximum from the message to prevent rate limit bursts (HTTP 429)
-            selected_codes = random.sample(codes, min(2, len(codes)))
-            logger.info(f"🎲 Selected {len(selected_codes)} code(s) out of {len(codes)} to attempt safely.")
+            # Randomly sample up to 10 codes maximum per drop to maintain pacing
+            selected_codes = random.sample(codes, min(10, len(codes)))
+            logger.info(f"🎲 Randomly selected {len(selected_codes)} code(s) out of {len(codes)} to attempt with 1.5s spacing.")
 
             for code in selected_codes:
                 if code not in claimed_codes and successful_claims < MAX_CLAIMS:
@@ -70,12 +70,15 @@ async def on_message(message):
                     for res in results:
                         if isinstance(res, dict) and res.get("success"):
                             successful_claims += 1
-                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})! Auto-stopping script.")
-                            await client.close()
-                            return
+                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+                            if successful_claims >= MAX_CLAIMS:
+                                logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
+                                await client.close()
+                                return
                     
-                    # Wait 1.5 seconds between attempts to prevent rate limit (HTTP 429)
+                    # Wait 1.5 seconds between attempts to maintain controlled request rate
                     await asyncio.sleep(1.5)
+
 
 
 
