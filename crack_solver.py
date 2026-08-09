@@ -61,18 +61,58 @@ class MastermindSolver:
     """
     Automated Mastermind Code Cracker for Lucid Trading 5-digit giveaway events.
     """
-    def __init__(self, token: str, cookie: str, endpoint_url: str = None):
-        self.token = token if token.startswith("Bearer ") else f"Bearer {token}"
+    def __init__(self, token: str, cookie: str, email: str = None, password: str = None, endpoint_url: str = None):
+        self.token = token if (token and token.startswith("Bearer ")) else f"Bearer {token}" if token else None
         self.cookie = cookie
+        self.email = email
+        self.password = password
         self.api_url = endpoint_url or MOBILE_ENDPOINTS[0]
         self.headers = {
-            "Authorization": self.token,
+            "Authorization": self.token or "",
             "Content-Type": "application/json",
             "User-Agent": "LucidApp/90.0 (Android; Mobile)",
             "Origin": "https://dash.lucidtrading.com",
             "Referer": "https://dash.lucidtrading.com/",
-            "Cookie": self.cookie
+            "Cookie": self.cookie or ""
         }
+        self.auth_error_logged = False
+
+
+    async def refresh_token(self, session: aiohttp.ClientSession) -> bool:
+        """
+        Logs in programmatically via credentials to fetch a new JWT token.
+        """
+        if not self.email or not self.password:
+            return False
+            
+        url = "https://dash.lucidtrading.com/api/mobile/login"
+        payload = {
+            "email": self.email,
+            "password": self.password,
+            "username": self.email
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "LucidApp/90.0 (Android; Mobile)",
+            "Accept": "application/json"
+        }
+        
+        logger.info(f"🔄 Token expired or missing. Attempting login as {self.email}...")
+        try:
+            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    new_token = data.get("token")
+                    if new_token:
+                        self.token = f"Bearer {new_token}"
+                        self.headers["Authorization"] = self.token
+                        logger.info("🔑 Auto-login successful! Fresh token updated.")
+                        self.auth_error_logged = False
+                        return True
+                logger.error(f"❌ Auto-login failed (HTTP {resp.status})")
+        except Exception as e:
+            logger.error(f"⚠️ Error during auto-login: {e}")
+        return False
 
 
     async def submit_guess(self, session: aiohttp.ClientSession, guess_code: str) -> dict:
@@ -92,56 +132,177 @@ class MastermindSolver:
             logger.error(f"⚠️ Error submitting guess '{guess_code}': {e}")
             return {}
 
-    async def solve(self, candidate_pool: List[str]):
+    def find_candidate_backtrack(self, history: List[Tuple[str, int, int]]) -> Optional[str]:
+        # Pre-process history for rapid lookup
+        h_processed = []
+        for g, c, w in history:
+            h_processed.append((list(g), c, w, g))
+            
+        chars = list(CHAR_SET)
+        
+        # Pre-shuffle character lists for each depth ONCE at the start
+        # This prevents any list copying/shuffling inside recursion!
+        depth_chars = []
+        for _ in range(5):
+            dc = chars[:]
+            random.shuffle(dc)
+            depth_chars.append(dc)
+            
+        candidate = [''] * 5
+        used_chars = set()
+
+        # Highly optimized validation
+        def is_consistent_fast(cand_str: str) -> bool:
+            for g_list, correct, wrong, _ in h_processed:
+                c_spot = 0
+                w_spot = 0
+                g_unmatched = []
+                c_unmatched = []
+                
+                for i in range(5):
+                    if cand_str[i] == g_list[i]:
+                        c_spot += 1
+                    else:
+                        g_unmatched.append(g_list[i])
+                        c_unmatched.append(cand_str[i])
+                
+                if c_spot != correct:
+                    return False
+                    
+                for char in g_unmatched:
+                    if char in c_unmatched:
+                        w_spot += 1
+                        c_unmatched.remove(char)
+                
+                if w_spot != wrong:
+                    return False
+            return True
+
+        def backtrack(depth: int) -> Optional[str]:
+            if depth == 5:
+                cand_str = "".join(candidate)
+                if is_consistent_fast(cand_str):
+                    return cand_str
+                return None
+            
+            # Iterate over pre-shuffled list for this specific depth
+            for c in depth_chars[depth]:
+                if c in used_chars:
+                    continue
+                    
+                candidate[depth] = c
+                used_chars.add(c)
+                
+                possible = True
+                remaining = 4 - depth
+                
+                for g_list, correct, wrong, _ in h_processed:
+                    # 1. Matches in prefix
+                    matches = 0
+                    for i in range(depth + 1):
+                        if candidate[i] == g_list[i]:
+                            matches += 1
+                            
+                    # Upper bound match prune
+                    if matches > correct:
+                        possible = False
+                        break
+                    # Lower bound match prune (maximum possible matches < correct)
+                    if matches + remaining < correct:
+                        possible = False
+                        break
+                    
+                    # 2. Overlap in prefix
+                    overlap = 0
+                    for i in range(depth + 1):
+                        if candidate[i] in g_list:
+                            overlap += 1
+                            
+                    # Upper bound overlap prune
+                    if overlap > (correct + wrong):
+                        possible = False
+                        break
+                    # Lower bound overlap prune (maximum possible overlap < correct + wrong)
+                    if overlap + remaining < (correct + wrong):
+                        possible = False
+                        break
+                
+                if possible:
+                    res = backtrack(depth + 1)
+                    if res:
+                        return res
+                        
+                used_chars.remove(c)
+                
+            return None
+            
+        return backtrack(0)
+
+    async def solve(self) -> str:
         """
-        Executes automated Mastermind guessing loop with 2.0s cooldown between attempts.
+        Optimized prefix-pruned backtracking solver:
+        Starts guessing randomly to gather constraints, then dynamically filters remaining search space.
         """
-        logger.info(f"🚀 Starting Mastermind Solver with {len(candidate_pool)} initial candidates...")
+        logger.info("⚡ Solving Mastermind Giveaway Event...")
         connector = aiohttp.TCPConnector(limit=10, ssl=False)
         
         async with aiohttp.ClientSession(connector=connector) as session:
-            current_candidates = candidate_pool[:]
-            attempts = 0
+            # Refresh token before starting solver if it doesn't exist
+            if not self.token:
+                await self.refresh_token(session)
 
-            # Initial first guess (e.g. "1EIOW" or random 5-character string)
-            next_guess = "1EIOW" if "1EIOW" in current_candidates else random.choice(current_candidates)
-
-            while current_candidates and attempts < 15:
-                attempts += 1
-                logger.info(f"👉 [Attempt #{attempts}] Submitting Guess: '{next_guess}' (Remaining Candidates: {len(current_candidates)})")
+            history = []
+            
+            # Start with a random initial guess
+            next_guess = "".join(random.choices(CHAR_SET, k=5))
+            
+            for round_num in range(1, 15):
+                logger.info(f"👉 [Round {round_num}] Submitting Guess: '{next_guess}'...")
                 
-                res = await self.submit_guess(session, next_guess)
+                resp_data = await self.submit_guess(session, next_guess)
                 
-                # Check for success
-                if res.get("success") or res.get("won") or res.get("status") == "claimed":
-                    logger.info(f"🎉 WINNER! Code '{next_guess}' cracked the giveaway! Reward credited!")
+                if not resp_data:
+                    # Retry in case of temporary network glitches
+                    await asyncio.sleep(2)
+                    continue
+                
+                # Check for win condition
+                if resp_data.get("message") == "code_match" or resp_data.get("win") or resp_data.get("status") == "success":
+                    logger.info(f"🏆 SUCCESS! Mastermind solved on round {round_num}. The correct code is '{next_guess}'!")
                     return next_guess
-
-                # Check feedback fields
-                correct_spot = res.get("correct_spot", res.get("correctSpot"))
-                wrong_spot = res.get("wrong_spot", res.get("wrongSpot"))
-
-                if correct_spot is not None and wrong_spot is not None:
-                    # Filter candidates in < 1ms
-                    start_filter = time.perf_counter()
-                    current_candidates = filter_candidates(current_candidates, next_guess, correct_spot, wrong_spot)
-                    filter_ms = (time.perf_counter() - start_filter) * 1000
-                    logger.info(f"⚡ Candidate pool pruned to {len(current_candidates)} in {filter_ms:.2f}ms (Feedback: {correct_spot} correct, {wrong_spot} wrong)")
+                
+                # Retrieve spot feedback
+                correct_spot = resp_data.get("correct") or resp_data.get("correctSpot") or resp_data.get("correct_spot")
+                wrong_spot = resp_data.get("wrong") or resp_data.get("wrongSpot") or resp_data.get("wrong_spot")
+                
+                if correct_spot is None or wrong_spot is None:
+                    # Check if event has ended or if we are out of spots
+                    if resp_data.get("status") == "inactive" or "no spots" in str(resp_data).lower():
+                        logger.warning("🚫 Event ended or no spots left. Stopping solver.")
+                        return None
                     
-                    if not current_candidates:
-                        logger.warning("No candidates match feedback! Code format might differ.")
-                        break
+                    logger.warning(f"❓ Unexpected response format (no match feedback): {resp_data}")
                     
-                    next_guess = current_candidates[0]
                 else:
-                    # If endpoint returns invalid or unknown format, pick next candidate
-                    if next_guess in current_candidates:
-                        current_candidates.remove(next_guess)
-                    if current_candidates:
-                        next_guess = random.choice(current_candidates)
-
-                # 1.0 second delay between guesses for maximum speed
-                await asyncio.sleep(1.0)
+                    logger.info(f"📊 Feedback: {correct_spot} correct spot, {wrong_spot} wrong spot.")
+                    history.append((next_guess, correct_spot, wrong_spot))
+                
+                # Calculate next constraint-satisfying candidate using optimized backtracking
+                start_filter = time.perf_counter()
+                next_guess_candidate = self.find_candidate_backtrack(history)
+                filter_ms = (time.perf_counter() - start_filter) * 1000
+                
+                if next_guess_candidate:
+                    logger.info(f"⚡ Next guess generated in {filter_ms:.2f}ms: '{next_guess_candidate}' (satisfies {len(history)} historic rules)")
+                    next_guess = next_guess_candidate
+                else:
+                    # Fallback to random if constraints collapsed
+                    next_guess = "".join(random.choices(CHAR_SET, k=5))
+                
+                # 3.1 second delay between guesses to respect the 3-second server timeout
+                await asyncio.sleep(3.1)
+                
+            return None
 
 
     async def check_event_status(self, session: aiohttp.ClientSession) -> Tuple[bool, dict]:
@@ -149,27 +310,49 @@ class MastermindSolver:
         Polls the Lucid Mobile App '🎁 Giveaway' section status API.
         Returns (is_active, status_data)
         """
-        # Strictly mobile app Giveaway section API endpoints (NOT web dashboard crate endpoints)
         status_urls = [
             "https://dash.lucidtrading.com/api/giveaway/status",
             "https://dash.lucidtrading.com/api/mobile/v1/giveaway/status",
             "https://api.lucidtrading.com/v1/giveaway/status"
         ]
         
+        # If token doesn't exist, try logging in first
+        if not self.token:
+            await self.refresh_token(session)
+
         for url in status_urls:
             try:
                 async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                     if resp.status == 200:
+                        self.auth_error_logged = False
                         data = await resp.json()
-                        # Check if a Crack the Code event is active or has spots left
                         is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
                         return is_active, data
+                    elif resp.status == 204:
+                        self.auth_error_logged = False
+                        return False, {}
+                    elif resp.status in (401, 403):
+                        # Token expired, try refreshing
+                        logger.warning(f"⚠️ Status check returned HTTP {resp.status}. Refreshing token...")
+                        if await self.refresh_token(session):
+                            # Retry request once with the new token
+                            async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as retry_resp:
+                                if retry_resp.status == 200:
+                                    data = await retry_resp.json()
+                                    is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
+                                    return is_active, data
+                                elif retry_resp.status == 204:
+                                    return False, {}
+                        
+                        if not self.auth_error_logged:
+                            logger.error(f"❌ Authentication failure (HTTP {resp.status}) at {url}. Login credentials or cookie might be wrong!")
+                            self.auth_error_logged = True
             except Exception:
                 continue
         return False, {}
 
 
-    async def watch_and_solve(self, candidate_pool: List[str]):
+    async def watch_and_solve(self):
         """
         24/7 App Watcher: Monitors the Lucid App '🎁 Giveaway' section continuously.
         Only starts guessing when a new giveaway event goes live!
@@ -185,7 +368,7 @@ class MastermindSolver:
 
                 if is_active:
                     logger.info("🚨 NEW EVENT DROPPED IN LUCID APP '🎁 GIVEAWAY' SECTION! Launching Mastermind solver...")
-                    won_code = await self.solve(candidate_pool)
+                    won_code = await self.solve()
                     if won_code:
                         logger.info("🎉 GIVEAWAY GAME WON & CLAIMED! Auto-stopping script to stay 100% safe & stealthy.")
                         return
@@ -199,19 +382,15 @@ class MastermindSolver:
                 await asyncio.sleep(2.0)
 
 async def main():
-    if not config.ACCOUNT_TOKENS:
-        logger.error("ACCOUNT_TOKENS is missing in .env")
-        return
-
-    logger.info("Generating candidate 5-character combinations...")
-    pool = [''.join(p) for p in [random.choices(CHAR_SET, k=5) for _ in range(5000)]]
-
+    token = config.ACCOUNT_TOKENS[0] if config.ACCOUNT_TOKENS else None
+    
     solver = MastermindSolver(
-        token=config.ACCOUNT_TOKENS[0],
-        cookie=config.BROWSER_COOKIE
+        token=token,
+        cookie=config.BROWSER_COOKIE,
+        email=config.LUCID_EMAIL,
+        password=config.LUCID_PASSWORD
     )
-    await solver.watch_and_solve(pool)
+    await solver.watch_and_solve()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
