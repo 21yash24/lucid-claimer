@@ -120,18 +120,7 @@ class MultiAccountClaimer:
         }
 
         payload = {
-            "secret": code,
-            "code": code,
-            "key": code,
-            "secretCode": code,
-            "secret_code": code,
-            "secretcode": code,
-            "coupon": code,
-            "couponCode": code,
-            "coupon_code": code,
-            "promo": code,
-            "promoCode": code,
-            "promo_code": code
+            "secretCode": code
         }
 
         max_attempts = 3
