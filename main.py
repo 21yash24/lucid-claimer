@@ -66,28 +66,32 @@ async def on_message(message):
             if not new_codes:
                 return
 
-            # Limit to 5 codes max per message to avoid backend overload, and mark as claimed
-            selected_codes = new_codes[:5]
-            for c in selected_codes:
-                claimed_codes.add(c)
+            # Randomly select up to 3 codes maximum to attempt
+            selected_codes = random.sample(new_codes, min(3, len(new_codes)))
+            logger.info(f"🎲 Detected {len(new_codes)} new code(s). Randomly selected {len(selected_codes)} to claim sequentially.")
 
-            logger.info(f"⚡ Firing concurrent claims for {len(selected_codes)} code(s) in parallel: {selected_codes}")
-            
-            # Fire all codes in parallel
-            tasks = [claimer.claim_all_accounts(code) for code in selected_codes]
-            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+            for idx, code in enumerate(selected_codes):
+                if successful_claims >= MAX_CLAIMS:
+                    break
 
-            # Analyze claim results
-            for results in results_list:
-                if isinstance(results, list):
-                    for res in results:
-                        if isinstance(res, dict) and res.get("success"):
-                            successful_claims += 1
-                            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
-                            if successful_claims >= MAX_CLAIMS:
-                                logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
-                                await client.close()
-                                return
+                claimed_codes.add(code)
+                results = await claimer.claim_all_accounts(code)
+
+                # Check if any claim succeeded
+                for res in results:
+                    if isinstance(res, dict) and res.get("success"):
+                        successful_claims += 1
+                        logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+                        if successful_claims >= MAX_CLAIMS:
+                            logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
+                            await client.close()
+                            return
+
+                # Wait 2 to 3 seconds before trying the next code (if any remain)
+                if idx < len(selected_codes) - 1 and successful_claims < MAX_CLAIMS:
+                    delay = random.uniform(2.0, 3.0)
+                    logger.info(f"⏳ Waiting {delay:.2f} seconds before attempting next code...")
+                    await asyncio.sleep(delay)
 
 
 async def main():
