@@ -29,6 +29,14 @@ LUCID_PASSWORD = os.getenv("LUCID_PASSWORD", "").strip()
 if LUCID_EMAIL and LUCID_PASSWORD and not any(acc[0] == LUCID_EMAIL for acc in LUCID_ACCOUNTS):
     LUCID_ACCOUNTS.append((LUCID_EMAIL, LUCID_PASSWORD))
 
+# X (Twitter) Scraper Settings
+X_USERNAME = os.getenv("X_USERNAME", "").strip()
+X_PASSWORD = os.getenv("X_PASSWORD", "").strip()
+X_EMAIL = os.getenv("X_EMAIL", "").strip()
+X_TARGET_USER = os.getenv("X_TARGET_USER", "cj_wawa").strip()
+X_POLL_INTERVAL = float(os.getenv("X_POLL_INTERVAL", "8.0").strip())
+
+
 def validate_config():
     errors = []
     if not DISCORD_TOKEN:

@@ -19,6 +19,7 @@ import config
 import random
 from parser import parse_discord_message_all
 from claimer import MultiAccountClaimer
+from x_monitor import XMonitor
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("LucidBot")
@@ -37,6 +38,27 @@ client = discord.Client()
 claimed_codes = set()
 successful_claims = 0
 MAX_CLAIMS = 2  # Target 2 successful claims before auto-stopping
+
+async def claim_code_callback(code: str):
+    global successful_claims
+    if successful_claims >= MAX_CLAIMS:
+        return
+    if code in claimed_codes:
+        return
+        
+    claimed_codes.add(code)
+    logger.info(f"⚡ Attempting to claim code: {code}")
+    results = await claimer.claim_all_accounts(code)
+    
+    # Check if any claim succeeded
+    for res in results:
+        if isinstance(res, dict) and res.get("success"):
+            successful_claims += 1
+            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+            if successful_claims >= MAX_CLAIMS:
+                logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
+                await client.close()
+                return
 
 @client.event
 async def on_ready():
@@ -110,6 +132,15 @@ async def main():
 
     # Initialize persistent HTTP session pool
     await claimer.initialize()
+
+    # Initialize and launch the X Monitor concurrently
+    x_monitor = XMonitor(claim_code_callback)
+    x_initialized = await x_monitor.initialize()
+    if x_initialized:
+        asyncio.create_task(x_monitor.poll_timeline())
+        logger.info("🐦 X Monitor background loop started.")
+    else:
+        logger.warning("🐦 X Monitor not started (authentication failed or credentials/cookies missing).")
 
     try:
         logger.info("Starting Discord gateway listener...")
