@@ -66,6 +66,12 @@ async def on_message(message):
             if not new_codes:
                 return
 
+            # Trigger loud audible alert and print visually striking box
+            print("\a\a")
+            print("\n" + "🔥" * 25)
+            print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
+            print("🔥" * 25 + "\n")
+
             # Randomly select up to 3 codes maximum to attempt
             selected_codes = random.sample(new_codes, min(3, len(new_codes)))
             logger.info(f"🎲 Detected {len(new_codes)} new code(s). Randomly selected {len(selected_codes)} to claim sequentially.")

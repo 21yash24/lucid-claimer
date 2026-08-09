@@ -367,6 +367,13 @@ class MastermindSolver:
                 is_active, status_data = await self.check_event_status(session)
 
                 if is_active:
+                    # Trigger visual banner and audible alert
+                    print("\a\a\a")
+                    print("\n" + "🚨" * 25)
+                    print("🚨                                       🚨")
+                    print("🚨   LUCID APP GIVEAWAY IS ACTIVE NOW!   🚨")
+                    print("🚨                                       🚨")
+                    print("🚨" * 25 + "\n")
                     logger.info("🚨 NEW EVENT DROPPED IN LUCID APP '🎁 GIVEAWAY' SECTION! Launching Mastermind solver...")
                     won_code = await self.solve()
                     if won_code:
