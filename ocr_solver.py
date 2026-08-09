@@ -4,7 +4,6 @@ try:
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
-    import numpy as np
 
 import re
 import os
@@ -41,7 +40,7 @@ class OcrSolver:
         else:
             logger.warning("⚠️ No OCR library (easyocr or pytesseract) found! Image OCR will be disabled.")
         
-    def filter_red_scribbles(self, img_path: str, output_path: str = None) -> np.ndarray:
+    def filter_red_scribbles(self, img_path: str, output_path: str = None) -> "np.ndarray":
         """
         Loads the image, detects red color regions (scribbles), and masks them out by replacing
         them with the surrounding background color or white to expose the black text underneath.
