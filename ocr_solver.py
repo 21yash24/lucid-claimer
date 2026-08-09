@@ -1,10 +1,22 @@
 import cv2
 import numpy as np
-import easyocr
 import re
 import os
 import logging
 import ssl
+
+try:
+    import easyocr
+    EASYOCR_AVAILABLE = True
+except ImportError:
+    EASYOCR_AVAILABLE = False
+
+try:
+    import pytesseract
+    from PIL import Image
+    PYTESSERACT_AVAILABLE = True
+except ImportError:
+    PYTESSERACT_AVAILABLE = False
 
 # Bypass SSL verification globally for urllib model downloads on macOS
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -14,9 +26,14 @@ logger = logging.getLogger("OCRSolver")
 
 class OcrSolver:
     def __init__(self):
-        # Initialize EasyOCR reader (cached/downloaded automatically on first load)
-        logger.info("Initializing EasyOCR Reader...")
-        self.reader = easyocr.Reader(['en'])
+        self.reader = None
+        if EASYOCR_AVAILABLE:
+            logger.info("Initializing EasyOCR Reader...")
+            self.reader = easyocr.Reader(['en'])
+        elif PYTESSERACT_AVAILABLE:
+            logger.info("EasyOCR not found. Falling back to PyTesseract OCR...")
+        else:
+            logger.warning("⚠️ No OCR library (easyocr or pytesseract) found! Image OCR will be disabled.")
         
     def filter_red_scribbles(self, img_path: str, output_path: str = None) -> np.ndarray:
         """
@@ -79,8 +96,19 @@ class OcrSolver:
             processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
             
             # EasyOCR can read from numpy arrays directly. We use uppercase alphanumeric allowlist
-            results = self.reader.readtext(processed_img, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-            extracted_text = " ".join(results)
+            if EASYOCR_AVAILABLE and self.reader:
+                results = self.reader.readtext(processed_img, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                extracted_text = " ".join(results)
+            elif PYTESSERACT_AVAILABLE:
+                # Convert processed_img (numpy array) to PIL image for PyTesseract compatibility
+                pil_img = Image.fromarray(processed_img)
+                # Tesseract configuration to restrict matches to uppercase alphanumeric characters only
+                custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
+            else:
+                logger.error("❌ No OCR library (easyocr or pytesseract) available for extraction!")
+                extracted_text = ""
+                
             logger.info(f"Raw OCR Output: {extracted_text}")
             return extracted_text
         except Exception as e:

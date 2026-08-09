@@ -109,7 +109,11 @@ class XMonitor:
         # We need a shared aiohttp ClientSession to download images efficiently
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
+            poll_count = 0
             while True:
+                poll_count += 1
+                if poll_count % 5 == 1:
+                    logger.info(f"📡 [X Monitor] Polling @{config.X_TARGET_USER} timeline (check #{poll_count})...")
                 try:
                     # Get user's recent tweets
                     user = await self.client.get_user_by_screen_name(config.X_TARGET_USER)
