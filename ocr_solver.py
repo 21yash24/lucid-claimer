@@ -1,5 +1,11 @@
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    import numpy as np
+
 import re
 import os
 import logging
@@ -89,25 +95,37 @@ class OcrSolver:
 
     def extract_text_from_image(self, img_path: str, preprocessed_path: str = None) -> str:
         """
-        Removes red scribbles, performs OCR on the processed image, and returns all extracted text.
+        Removes red scribbles (if opencv is available), performs OCR on the image, and returns all extracted text.
         """
         try:
-            # Preprocess the image
-            processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
-            
-            # EasyOCR can read from numpy arrays directly. We use uppercase alphanumeric allowlist
-            if EASYOCR_AVAILABLE and self.reader:
-                results = self.reader.readtext(processed_img, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                extracted_text = " ".join(results)
-            elif PYTESSERACT_AVAILABLE:
-                # Convert processed_img (numpy array) to PIL image for PyTesseract compatibility
-                pil_img = Image.fromarray(processed_img)
-                # Tesseract configuration to restrict matches to uppercase alphanumeric characters only
-                custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
+            if CV2_AVAILABLE:
+                # Preprocess the image with OpenCV filters
+                processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
+                
+                # EasyOCR can read from numpy arrays directly. We use uppercase alphanumeric allowlist
+                if EASYOCR_AVAILABLE and self.reader:
+                    results = self.reader.readtext(processed_img, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    extracted_text = " ".join(results)
+                elif PYTESSERACT_AVAILABLE:
+                    pil_img = Image.fromarray(processed_img)
+                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
+                else:
+                    logger.error("❌ No OCR library (easyocr or pytesseract) available for extraction!")
+                    extracted_text = ""
             else:
-                logger.error("❌ No OCR library (easyocr or pytesseract) available for extraction!")
-                extracted_text = ""
+                logger.warning("⚠️ OpenCV (cv2) not available. Performing raw OCR directly on the original image...")
+                if PYTESSERACT_AVAILABLE:
+                    pil_img = Image.open(img_path)
+                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
+                elif EASYOCR_AVAILABLE and self.reader:
+                    # EasyOCR can also read direct file paths
+                    results = self.reader.readtext(img_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    extracted_text = " ".join(results)
+                else:
+                    logger.error("❌ No OCR library (easyocr or pytesseract) available for raw extraction!")
+                    extracted_text = ""
                 
             logger.info(f"Raw OCR Output: {extracted_text}")
             return extracted_text
