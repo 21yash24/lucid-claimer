@@ -47,14 +47,23 @@ async def claim_code_callback(code: str):
         return
         
     claimed_codes.add(code)
-    logger.info(f"⚡ Attempting to claim code: {code}")
+    logger.info(f"⚡ [Dual Claim Mode] Spotted code: '{code}'. Triggering BOTH API Claim and Playwright Auto-Checkout concurrently...")
+    
+    # 1. Trigger Playwright Auto-Checkout as a background task
+    try:
+        from checkout_buyer import purchase_evaluation_account
+        asyncio.create_task(purchase_evaluation_account(code))
+    except Exception as e:
+        logger.error(f"⚠️ Failed to spawn Playwright auto-checkout: {e}")
+        
+    # 2. Trigger the fast direct API Claim
     results = await claimer.claim_all_accounts(code)
     
     # Check if any claim succeeded
     for res in results:
         if isinstance(res, dict) and res.get("success"):
             successful_claims += 1
-            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+            logger.info(f"🎉 SUCCESSFUL API CLAIM ({successful_claims}/{MAX_CLAIMS})!")
             if successful_claims >= MAX_CLAIMS:
                 logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
                 await client.close()
@@ -103,13 +112,23 @@ async def on_message(message):
                     break
 
                 claimed_codes.add(code)
+                logger.info(f"⚡ [Dual Claim Mode] Attempting code '{code}' on API and Playwright...")
+                
+                # 1. Trigger Playwright Auto-Checkout as a background task
+                try:
+                    from checkout_buyer import purchase_evaluation_account
+                    asyncio.create_task(purchase_evaluation_account(code))
+                except Exception as e:
+                    logger.error(f"⚠️ Failed to spawn Playwright auto-checkout: {e}")
+                
+                # 2. Trigger the direct API Claim
                 results = await claimer.claim_all_accounts(code)
 
                 # Check if any claim succeeded
                 for res in results:
                     if isinstance(res, dict) and res.get("success"):
                         successful_claims += 1
-                        logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+                        logger.info(f"🎉 SUCCESSFUL API CLAIM ({successful_claims}/{MAX_CLAIMS})!")
                         if successful_claims >= MAX_CLAIMS:
                             logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
                             await client.close()
