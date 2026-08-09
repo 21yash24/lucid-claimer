@@ -6,7 +6,7 @@ import random
 import string
 import ssl
 import certifi
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional
 import config
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
