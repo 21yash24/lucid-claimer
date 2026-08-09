@@ -16,8 +16,18 @@ raw_account_tokens = os.getenv("ACCOUNT_TOKENS", "").strip()
 ACCOUNT_TOKENS = [token.strip() for token in raw_account_tokens.split(",") if token.strip()]
 
 # Credentials for auto-login
+raw_accounts = os.getenv("LUCID_ACCOUNTS", "").strip()
+LUCID_ACCOUNTS = []
+if raw_accounts:
+    for acc in raw_accounts.split(","):
+        if ":" in acc:
+            parts = acc.split(":", 1)
+            LUCID_ACCOUNTS.append((parts[0].strip(), parts[1].strip()))
+
 LUCID_EMAIL = os.getenv("LUCID_EMAIL", "").strip()
 LUCID_PASSWORD = os.getenv("LUCID_PASSWORD", "").strip()
+if LUCID_EMAIL and LUCID_PASSWORD and not any(acc[0] == LUCID_EMAIL for acc in LUCID_ACCOUNTS):
+    LUCID_ACCOUNTS.append((LUCID_EMAIL, LUCID_PASSWORD))
 
 def validate_config():
     errors = []
@@ -25,7 +35,7 @@ def validate_config():
         errors.append("DISCORD_TOKEN is missing in .env")
     if not TARGET_CHANNEL_IDS:
         errors.append("TARGET_CHANNEL_ID is invalid or missing in .env")
-    if not ACCOUNT_TOKENS and not (LUCID_EMAIL and LUCID_PASSWORD):
-        errors.append("Either ACCOUNT_TOKENS or (LUCID_EMAIL and LUCID_PASSWORD) must be provided in .env")
+    if not ACCOUNT_TOKENS and not LUCID_ACCOUNTS:
+        errors.append("Either ACCOUNT_TOKENS or LUCID_ACCOUNTS credentials must be provided in .env")
     return errors
 

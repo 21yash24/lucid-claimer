@@ -23,8 +23,12 @@ from claimer import MultiAccountClaimer
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("LucidBot")
 
-# Set up claimer instance
-claimer = MultiAccountClaimer(config.REDEMPTION_API_URL, config.ACCOUNT_TOKENS)
+# Set up claimer instance with tokens and credentials
+claimer = MultiAccountClaimer(
+    config.REDEMPTION_API_URL,
+    config.ACCOUNT_TOKENS,
+    config.LUCID_ACCOUNTS
+)
 
 # Initialize discord.py-self client for user accounts
 client = discord.Client()
@@ -57,16 +61,25 @@ async def on_message(message):
         codes = parse_discord_message_all(message.content, embeds_dict)
 
         if codes:
-            # Randomly sample up to 10 codes maximum per drop to maintain pacing
-            selected_codes = random.sample(codes, min(10, len(codes)))
-            logger.info(f"🎲 Randomly selected {len(selected_codes)} code(s) out of {len(codes)} to attempt with 1.5s spacing.")
+            # Filter out already claimed codes
+            new_codes = [c for c in codes if c not in claimed_codes]
+            if not new_codes:
+                return
 
-            for code in selected_codes:
-                if code not in claimed_codes and successful_claims < MAX_CLAIMS:
-                    claimed_codes.add(code)
-                    results = await claimer.claim_all_accounts(code)
-                    
-                    # Check if any claim succeeded
+            # Limit to 5 codes max per message to avoid backend overload, and mark as claimed
+            selected_codes = new_codes[:5]
+            for c in selected_codes:
+                claimed_codes.add(c)
+
+            logger.info(f"⚡ Firing concurrent claims for {len(selected_codes)} code(s) in parallel: {selected_codes}")
+            
+            # Fire all codes in parallel
+            tasks = [claimer.claim_all_accounts(code) for code in selected_codes]
+            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Analyze claim results
+            for results in results_list:
+                if isinstance(results, list):
                     for res in results:
                         if isinstance(res, dict) and res.get("success"):
                             successful_claims += 1
@@ -75,13 +88,6 @@ async def on_message(message):
                                 logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
                                 await client.close()
                                 return
-                    
-                    # Wait 1.5 seconds between attempts to maintain controlled request rate
-                    await asyncio.sleep(1.5)
-
-
-
-
 
 
 async def main():
