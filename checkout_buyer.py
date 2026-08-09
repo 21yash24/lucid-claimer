@@ -2,7 +2,10 @@ import asyncio
 import logging
 import os
 import sys
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    pass
 
 sys.path.append("/Users/yashjha/.gemini/antigravity/scratch/lucid_claimer")
 import config
