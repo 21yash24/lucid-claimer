@@ -21,6 +21,12 @@ NITTER_MIRRORS = [
     "https://nitter.privacydev.net",
 ]
 
+# Hardcoded User IDs to eliminate get_user_by_screen_name API calls entirely
+HARDCODED_USER_IDS = {
+    "cj_wawa": "1580283393987649537",
+    "yashhjhaa": "1939188836611014656",
+}
+
 class XMonitor:
     def __init__(self, claim_callback):
         self.client = Client('en-US')
@@ -86,14 +92,11 @@ class XMonitor:
         extracted_codes = []
         for media in media_list:
             media_url = getattr(media, "url", None)
-            media_type = getattr(media, "type", None)
             
             if isinstance(media, dict):
                 media_url = media.get("media_url_https") or media.get("url")
-                media_type = media.get("type", "photo")
             elif isinstance(media, str):
                 media_url = media
-                media_type = "photo"
 
             if not media_url:
                 continue
@@ -106,13 +109,13 @@ class XMonitor:
                     await media.download(img_path)
                 except Exception as e:
                     logger.error(f"⚠️ Error using native twikit media download: {e}")
-                    img_path = ""
+                    img_path = await self.download_image(session, media_url)
             else:
                 logger.info(f"📸 Image attachment detected: {media_url}. Downloading via session fallback...")
                 img_path = await self.download_image(session, media_url)
 
             if img_path:
-                logger.info(f"👁️ Running White-Filter OCR solver on: {img_path}...")
+                logger.info(f"👁️ Running 4-Pass Ensemble OCR solver on: {img_path}...")
                 preprocessed_path = img_path.replace(".jpg", "_clean.jpg")
                 text = self.ocr_solver.extract_text_from_image(img_path, preprocessed_path)
                 codes = self.ocr_solver.find_lucid_codes(text)
@@ -136,13 +139,16 @@ class XMonitor:
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
             is_first_check = True
+            poll_count = 0
             while True:
+                poll_count += 1
                 for username in target_users_list:
+                    success = False
                     for mirror in NITTER_MIRRORS:
                         rss_url = f"{mirror}/{username}/rss"
                         try:
                             headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
-                            async with session.get(rss_url, headers=headers, timeout=3.5) as resp:
+                            async with session.get(rss_url, headers=headers, timeout=3.0) as resp:
                                 if resp.status != 200:
                                     continue
                                 data = await resp.text()
@@ -157,7 +163,8 @@ class XMonitor:
                                         guid = item.find('guid')
                                         item_id = guid.text if guid is not None else item.find('link').text
                                         self.seen_rss_ids.add(item_id)
-                                    continue
+                                    success = True
+                                    break
 
                                 for item in reversed(items[:5]):
                                     guid = item.find('guid')
@@ -179,7 +186,6 @@ class XMonitor:
                                     raw_imgs = re.findall(r'<img[^>]+src=[\"\']([^\"\']+)[\"\']', desc)
                                     tw_imgs = []
                                     for img_src in raw_imgs:
-                                        # Convert nitter pic proxy URL to official pbs.twimg.com CDN URL
                                         if 'media%2F' in img_src or 'media/' in img_src:
                                             media_id = unquote(img_src.split('media%2F')[-1] if 'media%2F' in img_src else img_src.split('media/')[-1])
                                             tw_url = f"https://pbs.twimg.com/media/{media_id}"
@@ -194,9 +200,14 @@ class XMonitor:
                                         if codes:
                                             logger.info(f"🚀 [RSS Engine] OCR found code(s) in @{username} tweet image: {codes}!")
                                             asyncio.create_task(self.claim_callback(codes, title))
-                                break # Exit mirror loop if successful
+                                success = True
+                                break
                         except Exception as e:
                             logger.debug(f"RSS check error for {rss_url}: {e}")
+                    
+                    if poll_count % 10 == 0 and success:
+                        logger.info(f"📡 [RSS Fast Engine] Active watch on @{username} (0 rate limits)...")
+
                 is_first_check = False
                 await asyncio.sleep(2.0)
 
@@ -216,17 +227,28 @@ class XMonitor:
 
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
-            user_objects = {}
             is_first_check = True
             while True:
                 try:
                     for username in target_users_list:
-                        if username not in user_objects:
-                            logger.info(f"🔍 Looking up user profile for @{username}...")
-                            user_objects[username] = await self.client.get_user_by_screen_name(username)
-                        
-                        user = user_objects[username]
-                        tweets = await user.get_tweets('Tweets', count=5)
+                        # Use hardcoded ID if available to prevent get_user_by_screen_name API calls entirely
+                        user_id = HARDCODED_USER_IDS.get(username)
+                        if user_id:
+                            try:
+                                tweets = await self.client.get_user_tweets(user_id, 'Tweets', count=5)
+                            except Exception as req_err:
+                                if "429" in str(req_err) or "limit" in str(req_err).lower():
+                                    logger.debug(f"GraphQL 429 for {username} — RSS Engine active.")
+                                    await asyncio.sleep(30)
+                                    continue
+                                else:
+                                    tweets = None
+                        else:
+                            try:
+                                user = await self.client.get_user_by_screen_name(username)
+                                tweets = await user.get_tweets('Tweets', count=5)
+                            except Exception:
+                                tweets = None
                         
                         if not tweets:
                             continue
@@ -264,22 +286,7 @@ class XMonitor:
                                     
                     is_first_check = False
                 except Exception as e:
-                    logger.error(f"⚠️ Error polling X timeline: {e}")
-                    if "401" in str(e) or "authenticate" in str(e).lower():
-                        if os.path.exists(self.cookies_path):
-                            try:
-                                os.remove(self.cookies_path)
-                            except Exception:
-                                pass
-                        self.client = Client('en-US')
-                        await self.initialize()
-                        user_objects = {}
-                        await asyncio.sleep(10)
-                        continue
-                        
-                    if "429" in str(e) or "limit" in str(e).lower():
-                        logger.debug("GraphQL rate limit — RSS Fast Engine running at 2.0s speed.")
-                        await asyncio.sleep(30)
-                        continue
+                    logger.debug(f"GraphQL poll status: {e}")
+                    await asyncio.sleep(30)
 
                 await asyncio.sleep(config.X_POLL_INTERVAL)
