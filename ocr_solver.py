@@ -214,49 +214,11 @@ class OcrSolver:
 
     def find_lucid_codes(self, text: str) -> list:
         """
-        Extracts Lucid Trading promo/coupon codes from text.
+        Extracts Lucid Trading promo/coupon codes from text using parser rules.
         Handles:
-          - Mixed alphanumeric codes (e.g. LIPE50100, LUC25K2024)
-          - Pure-letter promo codes in ALL CAPS (e.g. WAWA, LUCID, FREEEVAL)
-          - Codes embedded in sentences with surrounding punctuation
+          - LBOX codes
+          - Pure-letter promo codes (e.g. WAWA, CJ, FREEEVAL)
+          - Mixed alphanumeric codes (e.g. LIPE50100)
         """
-        # Strip URLs to avoid false matches inside links
-        clean_text = re.sub(r'https?://\S+|t\.co/\S+', '', text, flags=re.IGNORECASE)
-
-        # Common noise words to exclude (all-caps versions of normal English words)
-        NOISE_WORDS = {
-            "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN",
-            "HER", "WAS", "ONE", "OUR", "OUT", "DAY", "GET", "HAS", "HIM",
-            "HIS", "HOW", "ITS", "NEW", "NOW", "OLD", "SEE", "TWO", "WAY",
-            "WHO", "DID", "HAVE", "FROM", "THEY", "THIS", "WILL", "YOUR",
-            "BEEN", "GOOD", "MUCH", "SOME", "TIME", "VERY", "WHEN", "COME",
-            "HERE", "JUST", "KNOW", "LIKE", "LOOK", "MAKE", "MOST", "OVER",
-            "SUCH", "TAKE", "THAN", "THEM", "WELL", "WERE", "WITH",
-            "THAT", "INTO", "ONLY", "ALSO", "BACK", "AFTER", "FIRST",
-            "THEIR", "THERE", "THESE", "THINK", "THOSE", "ABOUT", "COULD",
-            "EVERY", "GOING", "GREAT", "LUCID", "WHICH", "WOULD", "OTHER",
-            "TRADE", "TODAY", "OFFER", "VALID", "CLAIM", "CHECK",
-            "RETWEET", "FOLLOW", "COMMENT", "REPLY",
-        }
-
-        upper_text = clean_text.upper()
-        found = set()
-
-        # Pattern 1: Mixed alphanumeric — must have BOTH letters AND at least 2 digits, 5-16 chars
-        # Real Lucid codes: LIPE50100, LUC25K2024, LPOE5O1OY etc.
-        for m in re.finditer(r'\b([A-Z0-9]{5,16})\b', upper_text):
-            token = m.group(1)
-            digit_count  = sum(c.isdigit() for c in token)
-            letter_count = sum(c.isalpha() for c in token)
-            # Require at least 2 digits AND at least 2 letters to filter noise
-            if digit_count >= 2 and letter_count >= 2:
-                found.add(token)
-
-        # Pattern 2: Pure uppercase letter promo codes — minimum 6 chars to avoid noise words
-        # e.g. WAWA(4) too short now, FREEEVAL, LUCIDPRO ok
-        for m in re.finditer(r'\b([A-Z]{6,12})\b', upper_text):
-            token = m.group(1)
-            if token not in NOISE_WORDS:
-                found.add(token)
-
-        return list(found)
+        from parser import extract_all_giveaway_codes
+        return extract_all_giveaway_codes(text)

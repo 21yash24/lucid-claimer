@@ -15,17 +15,19 @@ CODE_PATTERNS = [
 URL_PATTERN = re.compile(r'https?://[^\s>"]+', re.IGNORECASE)
 
 def clean_discord_text(text: str) -> str:
-    """Removes Discord custom emoji syntax like <:name:123456789> before parsing."""
+    """Removes Discord custom emoji syntax and normalizes smart quotes."""
     if not text:
         return ""
     # Strip custom emoji syntax <:emojiname:123456789012345678>
     text = re.sub(r'<a?:[a-zA-Z0-9_]+:\d+>', '', text)
+    # Replace smart quotes with standard spaces so word boundaries work
+    text = text.replace('“', ' ').replace('”', ' ').replace('"', ' ').replace("'", ' ').replace('‘', ' ').replace('’', ' ')
     return text
 
 FORBIDDEN_WORDS = {
     "PAYMENT", "CANCEL", "CLOSE", "TERMS", "PRIVACY", "CREDIT", "CARD", 
     "CHECKOUT", "PROCEED", "SELECT", "SUMMARY", "LUCID", "TRADING", 
-    "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT"
+    "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT", "CODE"
 }
 
 def extract_all_giveaway_codes(text: str) -> List[str]:
