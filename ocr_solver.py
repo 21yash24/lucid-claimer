@@ -1,15 +1,16 @@
+import re
+import os
+import json
+import logging
+import ssl
+import subprocess
+
 try:
     import cv2
     import numpy as np
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
-
-import re
-import os
-import logging
-import ssl
-import subprocess
 
 try:
     import easyocr
@@ -24,17 +25,24 @@ try:
 except ImportError:
     PYTESSERACT_AVAILABLE = False
 
-# Bypass SSL verification globally for urllib model downloads on macOS
 ssl._create_default_https_context = ssl._create_unverified_context
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("OCRSolver")
 
+# Mac Vision OCR binary path
+_BINARY = None
+def _get_binary():
+    global _BINARY
+    if _BINARY is None:
+        _BINARY = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
+    return _BINARY if os.path.exists(_BINARY) else None
+
+
 class OcrSolver:
     def __init__(self):
         self.reader = None
-        binary_path = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
-        if os.path.exists(binary_path):
+        if _get_binary():
             logger.info("🍏 Using Native Apple Vision OCR (Hardware Accelerated - 0% CPU Load).")
         elif EASYOCR_AVAILABLE:
             logger.info("Initializing EasyOCR Reader...")
@@ -43,203 +51,188 @@ class OcrSolver:
             logger.info("EasyOCR not found. Falling back to PyTesseract OCR...")
         else:
             logger.warning("⚠️ No OCR library found!")
-        
-    def filter_red_scribbles(self, img_path: str, output_path: str = None) -> "np.ndarray":
+
+    # ──────────────────────────────────────────────────────
+    # STEP 1: Remove red scribble lines via inpainting
+    # ──────────────────────────────────────────────────────
+    def _remove_red_lines(self, img_path: str, output_path: str) -> str:
         """
-        Loads the image, detects red color regions (scribbles), and masks them out by replacing
-        them with the surrounding background color or white to expose the black text underneath.
+        Removes red X / diagonal scribbles from tweet image using OpenCV inpainting.
+        Returns path to cleaned image, or original path if OpenCV unavailable.
         """
+        if not CV2_AVAILABLE:
+            return img_path
+
         img = cv2.imread(img_path)
         if img is None:
-            raise ValueError(f"Could not load image from: {img_path}")
-            
-        # Convert to HSV color space for robust color detection
+            return img_path
+
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        
-        # Red has two ranges in HSV space
-        lower_red_1 = np.array([0, 50, 50])
-        upper_red_1 = np.array([10, 255, 255])
-        lower_red_2 = np.array([170, 50, 50])
-        upper_red_2 = np.array([180, 255, 255])
-        
-        mask_1 = cv2.inRange(hsv, lower_red_1, upper_red_1)
-        mask_2 = cv2.inRange(hsv, lower_red_2, upper_red_2)
-        red_mask = mask_1 | mask_2
-        
-        # Dilate mask slightly to capture borders/anti-aliasing of the red lines
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-        red_mask = cv2.dilate(red_mask, kernel, iterations=1)
-        
-        # Replace red pixels with dark gray/black (since background is dark/black)
-        result = img.copy()
-        result[red_mask > 0] = [15, 15, 15]
-        
-        # Convert to grayscale and apply adaptive thresholding for high OCR accuracy
-        gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
-        
-        # Invert the grayscale image (makes background white, text black)
-        gray_inverted = cv2.bitwise_not(gray)
-        
-        # Threshold to binary for crisp edges
-        _, thresh = cv2.threshold(gray_inverted, 120, 255, cv2.THRESH_BINARY)
-        
-        # Apply vertical erosion to connect vertical strokes cut by horizontal red lines
-        kernel_vert = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 2))
-        eroded = cv2.erode(thresh, kernel_vert, iterations=1)
-        
-        # Resize image for better OCR readability of small fonts
-        gray_resized = cv2.resize(eroded, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        
-        if output_path:
-            cv2.imwrite(output_path, gray_resized)
-            logger.info(f"Processed image saved to: {output_path}")
-            
-        return gray_resized
+        # Red occupies two hue bands
+        m1 = cv2.inRange(hsv, np.array([0,   140, 80]), np.array([10,  255, 255]))
+        m2 = cv2.inRange(hsv, np.array([165, 140, 80]), np.array([180, 255, 255]))
+        red_mask = cv2.bitwise_or(m1, m2)
 
-    def _preprocess_pil(self, img_path: str, scale: float):
-        from PIL import ImageOps, ImageChops
-        img = Image.open(img_path).convert("RGB")
-        width, height = img.size
-        pixels = img.load()
-        
-        # 1. Clear red pixels (be careful not to clean white text)
-        for y in range(height):
-            for x in range(width):
-                r, g, b = pixels[x, y]
-                # Red is high, Green and Blue are low, and red is clearly dominant
-                if r > 55 and g < 75 and b < 75 and (r - g) > 25 and (r - b) > 25:
-                    pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
-                    
-        # 2. Convert to grayscale
-        gray = img.convert("L")
-        
-        # 3. Apply thresholding (make text white, background black)
-        thresh = gray.point(lambda p: 255 if p > 100 else 0)
-        
-        # 4. Invert (Tesseract prefers black text on white background)
-        inverted = ImageOps.invert(thresh)
-        
-        # 4b. Vertical & Horizontal dilation to bridge gaps (1x3 vertical, 1x2 horizontal min-filter)
-        shifted_up = ImageChops.offset(inverted, 0, -1)
-        shifted_down = ImageChops.offset(inverted, 0, 1)
-        shifted_left = ImageChops.offset(inverted, -1, 0)
-        shifted_right = ImageChops.offset(inverted, 1, 0)
-        
-        temp = ImageChops.darker(inverted, shifted_up)
-        temp = ImageChops.darker(temp, shifted_down)
-        temp = ImageChops.darker(temp, shifted_left)
-        eroded = ImageChops.darker(temp, shifted_right)
-        
-        # 5. Resize using BICUBIC for clean anti-aliased larger text
+        # Expand mask to cover anti-aliased stroke edges
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        red_mask = cv2.dilate(red_mask, kernel, iterations=2)
+
+        # Inpaint fills the deleted area using surrounding pixels
+        cleaned = cv2.inpaint(img, red_mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
+        cv2.imwrite(output_path, cleaned)
+        return output_path
+
+    # ──────────────────────────────────────────────────────
+    # STEP 2: Run Apple Vision OCR on an image path
+    # ──────────────────────────────────────────────────────
+    def _run_vision_ocr(self, img_path: str) -> str:
+        binary = _get_binary()
+        if not binary or not os.path.exists(img_path):
+            return ""
         try:
-            resample_mode = Image.Resampling.BICUBIC
-        except AttributeError:
-            resample_mode = Image.BICUBIC
-            
-        resized = eroded.resize((int(width * scale), int(height * scale)), resample_mode)
-        return resized
+            res = subprocess.run(
+                [binary, img_path],
+                capture_output=True, text=True, timeout=5
+            )
+            if res.returncode == 0:
+                return res.stdout.strip()
+        except Exception as e:
+            logger.debug(f"Vision OCR error on {img_path}: {e}")
+        return ""
 
+    # ──────────────────────────────────────────────────────
+    # STEP 3: Reconstruct code from fragmented OCR output
+    # ──────────────────────────────────────────────────────
+    def _reconstruct_code_from_fragments(self, raw_ocr: str) -> str | None:
+        """
+        The red X scribble cuts the bold code text into 2-3 fragments on the first OCR line.
+        E.g. raw OCR gives:
+            '41N0\nYPIUQ\nLucidPro Eval 50k\n100% off\nCopy'
+
+        Strategy: collect all uppercase+digit tokens from the TOP of the OCR output
+        (stop at first UI-noise line), then concatenate = the full coupon code.
+
+        Only uses the FIRST block of text (raw pass) — before any '---' separator.
+        """
+        # Use only the raw OCR block (before ---)
+        first_block = raw_ocr.split("---")[0] if "---" in raw_ocr else raw_ocr
+        lines = [l.strip() for l in first_block.splitlines() if l.strip()]
+
+        code_fragments = []
+        for line in lines:
+            upper = line.upper()
+            # Stop at first obvious UI noise line
+            if any(noise in upper for noise in [
+                "LUCID", "EVAL", "100%", "COPY", "OFF", "50K", "150K",
+                "LUCIDPRO", "PROCENT", "COUPON", "CART", "CHECKOUT",
+                "PRO EVAL", "% OFF"
+            ]):
+                break
+            # Strip non-alphanumeric and collect
+            tokens = re.findall(r'[A-Z0-9]+', upper)
+            code_fragments.extend(tokens)
+
+        if code_fragments:
+            candidate = "".join(code_fragments)
+            logger.info(f"🔧 Code fragments from raw OCR: {code_fragments} → '{candidate}'")
+            return candidate
+        return None
+
+    # ──────────────────────────────────────────────────────
+    # Public: extract_text_from_image
+    # ──────────────────────────────────────────────────────
     def extract_text_from_image(self, img_path: str, preprocessed_path: str = None) -> str:
         """
-        Removes red scribbles (if opencv is available), performs OCR on the image, and returns all extracted text.
+        Full pipeline:
+          1. Remove red scribble lines from image (inpainting).
+          2. Run Apple Vision OCR on BOTH cleaned and raw image.
+          3. Return raw OCR text first (most accurate letter recognition),
+             then cleaned OCR text separated by a sentinel line.
         """
-        try:
-            texts = []
+        clean_path = preprocessed_path or img_path.replace(".jpg", "_nored.jpg")
+        cleaned_img = self._remove_red_lines(img_path, clean_path)
 
-            # 1. Filter red scribbles first
-            processed_img = None
-            if CV2_AVAILABLE:
-                processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
+        raw_text     = self._run_vision_ocr(img_path)
+        cleaned_text = self._run_vision_ocr(cleaned_img)
 
-            # 2. Try macOS Native Neural Engine Vision OCR on raw image AND clean filtered image
-            binary_path = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
-            if os.path.exists(binary_path):
-                # Try raw image
+        if raw_text:
+            logger.info(f"🍏 [Vision OCR Raw] → {raw_text!r}")
+        if cleaned_text:
+            logger.info(f"🍏 [Vision OCR Cleaned] → {cleaned_text!r}")
+
+        # Return raw first so reconstruction prioritises it
+        parts = []
+        if raw_text:
+            parts.append(raw_text)
+        if cleaned_text:
+            parts.append(cleaned_text)
+
+        if not parts:
+            # Fallback to EasyOCR/Tesseract
+            if EASYOCR_AVAILABLE and self.reader:
                 try:
-                    res1 = subprocess.run([binary_path, img_path], capture_output=True, text=True, timeout=3)
-                    if res1.returncode == 0 and res1.stdout.strip():
-                        t1 = res1.stdout.strip()
-                        logger.info(f"🍏 [Apple Vision OCR Raw] Extracted: {t1!r}")
-                        texts.append(t1)
+                    results = self.reader.readtext(
+                        cleaned_img, detail=0,
+                        allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    )
+                    parts.append(" ".join(results))
                 except Exception as e:
-                    logger.debug(f"Native Vision OCR raw error: {e}")
+                    logger.debug(f"EasyOCR error: {e}")
+            elif PYTESSERACT_AVAILABLE:
+                try:
+                    pil = Image.open(cleaned_img)
+                    cfg = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    parts.append(pytesseract.image_to_string(pil, config=cfg).strip())
+                except Exception as e:
+                    logger.debug(f"Tesseract error: {e}")
 
-                # Try clean scribble-filtered image
-                if preprocessed_path and os.path.exists(preprocessed_path):
-                    try:
-                        res2 = subprocess.run([binary_path, preprocessed_path], capture_output=True, text=True, timeout=3)
-                        if res2.returncode == 0 and res2.stdout.strip():
-                            t2 = res2.stdout.strip()
-                            logger.info(f"🍏 [Apple Vision OCR Cleaned] Extracted: {t2!r}")
-                            texts.append(t2)
-                    except Exception as e:
-                        logger.debug(f"Native Vision OCR clean error: {e}")
+        combined = "\n---\n".join(parts)
+        logger.info(f"Combined OCR output: {combined!r}")
+        return combined
 
-                if texts:
-                    return "\n".join(texts)
-                
-                # EasyOCR can read from numpy arrays directly. We use uppercase alphanumeric allowlist
-                if EASYOCR_AVAILABLE and self.reader:
-                    results = self.reader.readtext(processed_img, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                    extracted_text = " ".join(results)
-                elif PYTESSERACT_AVAILABLE:
-                    pil_img = Image.fromarray(processed_img)
-                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                    extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
-                else:
-                    logger.error("❌ No OCR library (easyocr or pytesseract) available for extraction!")
-                    extracted_text = ""
-            else:
-                logger.warning("⚠️ OpenCV (cv2) not available. Falling back to PIL-based red scribble removal...")
-                
-                # Try OCR at different scaling factors to capture both large and small coupon text perfectly!
-                text_runs = []
-                
-                # Save the 3.0x preprocessed debug image to the debug path
-                processed_3x = self._preprocess_pil(img_path, 3.0)
-                if preprocessed_path:
-                    try:
-                        processed_3x.save(preprocessed_path)
-                    except Exception:
-                        pass
-                
-                # Run OCR on scales 1.0x (best for large text) and 3.0x (best for small text)
-                for scale in [1.0, 3.0]:
-                    try:
-                        processed_img = self._preprocess_pil(img_path, scale)
-                        if PYTESSERACT_AVAILABLE:
-                            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                            run_text = pytesseract.image_to_string(processed_img, config=custom_config).strip()
-                            text_runs.append(run_text)
-                        elif EASYOCR_AVAILABLE and self.reader:
-                            # Save temporary file for easyocr
-                            temp_path = f"tmp_images/temp_scale_{scale}.jpg"
-                            processed_img.save(temp_path)
-                            results = self.reader.readtext(temp_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                            text_runs.append(" ".join(results))
-                            try:
-                                os.remove(temp_path)
-                            except Exception:
-                                pass
-                    except Exception as run_error:
-                        logger.error(f"⚠️ Scale {scale}x run failed: {run_error}")
-                
-                # Combine the text from all scale runs
-                extracted_text = "\n".join([t for t in text_runs if t])
-                
-            logger.info(f"Raw OCR Output: {extracted_text}")
-            return extracted_text
-        except Exception as e:
-            logger.error(f"Error during OCR extraction: {e}")
-            return ""
-
+    # ──────────────────────────────────────────────────────
+    # Public: find_lucid_codes
+    # ──────────────────────────────────────────────────────
     def find_lucid_codes(self, text: str) -> list:
         """
-        Extracts Lucid Trading promo/coupon codes from text using parser rules.
-        Handles:
-          - LBOX codes
-          - Pure-letter promo codes (e.g. WAWA, CJ, FREEEVAL)
-          - Mixed alphanumeric codes (e.g. LIPE50100)
+        Extracts a Lucid Trading coupon code from OCR text.
+
+        Priority:
+          1. Try to reconstruct the code from top-line fragments
+             (handles red-X split codes like 41N0 + YPIUQ → 41N0HYPEQ50 etc.)
+          2. Fall back to parser extraction for clean / text-based codes.
+
+        The reconstructed code must:
+          - Be 6-25 characters
+          - Contain BOTH at least one letter AND at least one digit
         """
+        # Try reconstruction first — use RAW image OCR since inpainting can distort letters
+        # The raw OCR gives the most accurate letter fragments, just split by the red X line
+        if text:
+            # The RAW pass is always the last entry in combined text
+            lines_all = text.splitlines()
+            # Find the RAW pass block — it starts after the CLEANED pass
+            # Both passes separated in combined text; RAW has the cleaner letter reading
+            # We reconstruct from ALL lines (both passes) and take the best fragments
+            reconstructed = self._reconstruct_code_from_fragments(text)
+            if reconstructed:
+                has_letter = any(c.isalpha() for c in reconstructed)
+                has_digit  = any(c.isdigit() for c in reconstructed)
+                if has_letter and has_digit and 5 <= len(reconstructed) <= 25:
+                    logger.info(f"✅ Using reconstructed code: '{reconstructed}'")
+                    return [reconstructed]
+
+        # Fallback: standard parser extraction
         from parser import extract_all_giveaway_codes
-        return extract_all_giveaway_codes(text)
+        raw = extract_all_giveaway_codes(text)
+
+        # Filter: prefer codes with BOTH letters AND digits, 6+ chars
+        strong = [c for c in raw if any(ch.isalpha() for ch in c)
+                                 and any(ch.isdigit() for ch in c)
+                                 and len(c) >= 6]
+        if strong:
+            strong.sort(key=len, reverse=True)
+            logger.info(f"✅ Strong code candidates: {strong}")
+            return strong
+
+        return raw
