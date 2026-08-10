@@ -7,14 +7,15 @@ try:
 except ImportError:
     pass
 
-sys.path.append("/Users/yashjha/.gemini/antigravity/scratch/lucid_claimer")
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("AutoCheckout")
 
 # Path to local persistent browser storage to retain logins and device IDs
-USER_DATA_DIR = "/Users/yashjha/.gemini/antigravity/scratch/lucid_claimer/tmp_browser_data"
+USER_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_browser_data")
 
 async def purchase_evaluation_account(coupon_code: str):
     """
@@ -79,23 +80,22 @@ async def purchase_evaluation_account(coupon_code: str):
             for box in checkboxes:
                 await box.check()
                 
-            # Step 5: Click the Place Order / Complete Checkout button
-            # Note: For safety during local testing, we print and log instead of actually completing the checkout
-            complete_button = "button:has-text('Complete'), button:has-text('Place Order'), button:has-text('Buy')"
-            logger.info("🎯 Price reduced successfully. Ready to click 'Complete Order'.")
-            
-            # Uncomment below to enable live checkout execution:
-            # await page.click(complete_button)
-            # logger.info("🎉 CHECKOUT COMPLETED!")
+            # For free order checkouts, terms checkbox is required, then we click pay/complete
+            complete_button = "button:has-text('Complete'), button:has-text('Place Order'), button:has-text('Buy'), button:has-text('Pay'), button:has-text('Checkout')"
+            logger.info("🎯 Clicking 'Complete Order' button to perform live checkout...")
+            await page.click(complete_button)
+            await page.wait_for_timeout(5000)
+            logger.info("🎉 CHECKOUT COMPLETED!")
             
             elapsed = (asyncio.get_event_loop().time() - start_time) * 1000
-            logger.info(f"🏁 Auto-checkout finished mock flow in {elapsed:.1f}ms.")
+            logger.info(f"🏁 Auto-checkout completed live flow in {elapsed:.1f}ms.")
             
         except Exception as e:
             logger.error(f"❌ Error during auto-checkout: {e}")
             # Take a screenshot for debugging purposes
-            await page.screenshot(path="/Users/yashjha/.gemini/antigravity/scratch/lucid_claimer/tmp_images/checkout_error.png")
-            logger.info("📸 Debug screenshot saved to tmp_images/checkout_error.png")
+            screenshot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "checkout_error.png")
+            await page.screenshot(path=screenshot_path)
+            logger.info(f"📸 Debug screenshot saved to {screenshot_path}")
         finally:
             await context.close()
 
