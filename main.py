@@ -164,15 +164,6 @@ async def main():
     # Initialize persistent HTTP session pool
     await claimer.initialize()
 
-    # Initialize and launch the X Monitor concurrently
-    x_monitor = XMonitor(claim_code_callback)
-    x_initialized = await x_monitor.initialize()
-    if x_initialized:
-        asyncio.create_task(x_monitor.poll_timeline())
-        logger.info("🐦 X Monitor background loop started.")
-    else:
-        logger.warning("🐦 X Monitor not started (authentication failed or credentials/cookies missing).")
-
     try:
         logger.info("Starting Discord gateway listener...")
         await client.start(config.DISCORD_TOKEN)
