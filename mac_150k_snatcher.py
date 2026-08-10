@@ -103,38 +103,118 @@ def find_and_click_green_button():
         logger.debug(f"Green button click error: {e}")
         return False
 
+def find_and_click_coupon_field_and_button():
+    """
+    Finds the 'Apply Coupon Code' input area or green 'Apply Coupon' button at top of modal,
+    clicks the input box to focus it, and returns True.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        shot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "screen_shot.png")
+        subprocess.run(['screencapture', '-x', shot_path], capture_output=True)
+
+        img = cv2.imread(shot_path)
+        if img is None:
+            return False
+
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower_green = np.array([40, 100, 100])
+        upper_green = np.array([80, 255, 255])
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return False
+
+        # Find all green buttons
+        green_buttons = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            area = cv2.contourArea(c)
+            if area > 1000 and w > h:
+                green_buttons.append((x, y, w, h, c))
+
+        if not green_buttons:
+            return False
+
+        # Sort by y-coordinate ascending (topmost green button in modal is "Apply Coupon")
+        green_buttons.sort(key=lambda b: b[1])
+
+        # If top green button is short/medium (Apply Coupon button), click to its left (the input field)
+        top_btn = green_buttons[0]
+        x, y, w, h, _ = top_btn
+
+        # Target input box is ~150px to the left of the green Apply Coupon button
+        input_x = max(10, x - 150)
+        input_y = y + h // 2
+
+        btn_x = x + w // 2
+        btn_y = y + h // 2
+
+        logger.info(f"🎯 Target input field found at ({input_x}, {input_y}), Apply Coupon btn at ({btn_x}, {btn_y})")
+        return (input_x, input_y, btn_x, btn_y)
+
+    except Exception as e:
+        logger.debug(f"Coupon field detection error: {e}")
+        return None
+
 def paste_code_to_frontmost_chrome(code: str):
     """
     Full automated checkout:
-    1. Paste code → Tab → Enter (Apply Coupon)
-    2. Wait 2.5s for server validation
-    3. Screenshot → detect green PROCEED TO PAYMENT button → click it
+    1. Focuses Chrome.
+    2. Detects 'Apply Coupon Code' input box on screen and clicks it directly.
+    3. Pastes code and clicks green 'Apply Coupon' button.
+    4. Waits 2.5s for validation.
+    5. Screenshot → detects green 'PROCEED TO PAYMENT' button → clicks it.
     """
     try:
         subprocess.run(['pbcopy'], input=code.encode('utf-8'))
 
-        # Step 1: Paste + Apply Coupon
-        applescript_step1 = '''
-        tell application "Google Chrome" to activate
-        delay 0.15
-        tell application "System Events"
-            keystroke "v" using {command down}
-            delay 0.2
-            key code 48
-            delay 0.1
-            key code 36
-        end tell
-        '''
-        subprocess.run(['osascript', '-e', applescript_step1], capture_output=True)
-        logger.info(f"🖱️ Step 1 — Pasted '{code}' + clicked Apply Coupon!")
+        # Focus Chrome first
+        subprocess.run(['osascript', '-e', 'tell application "Google Chrome" to activate'], capture_output=True)
+        import time; time.sleep(0.2)
+
+        # Detect input field and Apply Coupon button on screen
+        coords = find_and_click_coupon_field_and_button()
+        if coords:
+            ix, iy, bx, by = coords
+            # Click input box, paste code, then click green Apply Coupon button
+            applescript_click = f'''
+            tell application "System Events"
+                click at {{{ix}, {iy}}}
+                delay 0.1
+                keystroke "a" using {{command down}}
+                delay 0.05
+                keystroke "v" using {{command down}}
+                delay 0.15
+                click at {{{bx}, {by}}}
+            end tell
+            '''
+            subprocess.run(['osascript', '-e', applescript_click], capture_output=True)
+            logger.info(f"🖱️ Step 1 — Clicked input box, pasted '{code}', clicked Apply Coupon button!")
+        else:
+            # Fallback if detection fails: standard Tab/Enter
+            applescript_fallback = '''
+            tell application "System Events"
+                keystroke "v" using {command down}
+                delay 0.2
+                key code 48
+                delay 0.1
+                key code 36
+            end tell
+            '''
+            subprocess.run(['osascript', '-e', applescript_fallback], capture_output=True)
+            logger.info(f"🖱️ Step 1 (Fallback) — Pasted '{code}' into active field!")
 
         # Step 2: Wait for coupon validation
-        import time; time.sleep(2.5)
+        time.sleep(2.5)
 
         # Step 3: Find and click green PROCEED TO PAYMENT button
         clicked = find_and_click_green_button()
         if not clicked:
-            logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click it manually!")
+            logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click it manually if valid!")
 
     except Exception as e:
         logger.debug(f"Chrome auto-paste error: {e}")
