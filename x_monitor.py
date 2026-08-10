@@ -173,7 +173,27 @@ class XMonitor:
                     is_first_check = False
                 except Exception as e:
                     logger.error(f"⚠️ Error polling X timeline: {e}")
-                    # If we get rate limited (429), back off for 300 seconds to reset rate limit window
+                    
+                    # 1. If we get unauthorized (401), cookies are expired/invalid. Clean up and try login.
+                    if "401" in str(e) or "authenticate" in str(e).lower() or "unauthorized" in str(e).lower():
+                        logger.warning("❌ X session cookies expired or invalid (HTTP 401). Deleting cookies and attempting re-login...")
+                        if os.path.exists(self.cookies_path):
+                            try:
+                                os.remove(self.cookies_path)
+                            except Exception:
+                                pass
+                        
+                        # Re-instantiate Twikit client and attempt credential login
+                        self.client = Client('en-US')
+                        if await self.initialize():
+                            logger.info("🔑 Successfully re-authenticated and refreshed cookies!")
+                            user_objects = {}  # Clear cached user profiles
+                        else:
+                            logger.error("❌ Re-authentication failed. Please check credentials or supply fresh cookies in x_cookies.json.")
+                            await asyncio.sleep(60)  # Wait a bit before next attempt
+                        continue
+                        
+                    # 2. If we get rate limited (429), back off for 300 seconds to reset rate limit window
                     if "429" in str(e) or "limit" in str(e).lower():
                         backoff_time = 300
                         logger.warning(f"⏳ Rate limit exceeded (429) detected. Sleeping for {backoff_time} seconds (5 minutes) to let Twitter reset your rate limit window...")
