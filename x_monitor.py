@@ -108,69 +108,72 @@ class XMonitor:
 
     async def poll_timeline(self):
         """
-        Main real-time timeline polling loop that monitors the target user.
+        Main real-time timeline polling loop that monitors the target users.
         """
-        logger.info(f"👀 Monitoring X user: @{config.X_TARGET_USER} (interval: {config.X_POLL_INTERVAL}s)")
+        target_users_list = [u.strip() for u in config.X_TARGET_USER.split(",") if u.strip()]
+        logger.info(f"👀 Monitoring X users: {', '.join(target_users_list)} (interval: {config.X_POLL_INTERVAL}s)")
         
         # We need a shared aiohttp ClientSession to download images efficiently
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
             poll_count = 0
-            user = None
+            user_objects = {}  # Cache username -> user object
             is_first_check = True
             while True:
                 poll_count += 1
                 if poll_count % 5 == 1:
-                    logger.info(f"📡 [X Monitor] Polling @{config.X_TARGET_USER} timeline (check #{poll_count})...")
+                    logger.info(f"📡 [X Monitor] Polling {', '.join(target_users_list)} timelines (check #{poll_count})...")
                 try:
-                    # Get user profile once and cache it to cut API requests in half and prevent 429 rate limits
-                    if not user:
-                        user = await self.client.get_user_by_screen_name(config.X_TARGET_USER)
-                    tweets = await user.get_tweets('Tweets', count=5)
-                    
-                    if not tweets:
-                        await asyncio.sleep(config.X_POLL_INTERVAL)
-                        continue
+                    for username in target_users_list:
+                        # Get user profile once and cache it to cut API requests and prevent rate limits
+                        if username not in user_objects:
+                            user_objects[username] = await self.client.get_user_by_screen_name(username)
                         
-                    # Process from oldest to newest in the count sample
-                    for tweet in reversed(tweets):
-                        if tweet.id in self.seen_tweets:
+                        user = user_objects[username]
+                        tweets = await user.get_tweets('Tweets', count=5)
+                        
+                        if not tweets:
                             continue
                             
-                        self.seen_tweets.add(tweet.id)
-                        
-                        if is_first_check:
-                            continue
-                            
-                        # Print large warning alert
-                        print("\a\a\a")
-                        print("\n" + "🐦" * 25)
-                        print(f"🚨 NEW TWEET FROM @{config.X_TARGET_USER}! 🚨")
-                        print(f"Content: {tweet.text}")
-                        print("🐦" * 25 + "\n")
-                        
-                        # 1. Parse text directly for codes
-                        codes = self.ocr_solver.find_lucid_codes(tweet.text)
-                        
-                        # 2. Check media attachments for codes (images with red scribbles)
-                        media = getattr(tweet, "media", None) or getattr(tweet, "extended_entities", {}).get("media", [])
-                        if media:
-                            image_codes = await self.process_tweet_media(session, media)
-                            codes.extend(image_codes)
-                            
-                        # Remove duplicates
-                        codes = list(set(codes))
-                        
-                        if codes:
-                            logger.info(f"⚡ Codes spotted in tweet: {codes}. Dispatching claims...")
-                            for code in codes:
-                                # Trigger redemption callback asynchronously
-                                asyncio.create_task(self.claim_callback(code))
+                        # Process from oldest to newest in the count sample
+                        for tweet in reversed(tweets):
+                            if tweet.id in self.seen_tweets:
+                                continue
                                 
+                            self.seen_tweets.add(tweet.id)
+                            
+                            if is_first_check:
+                                continue
+                                
+                            # Print large warning alert
+                            print("\a\a\a")
+                            print("\n" + "🐦" * 25)
+                            print(f"🚨 NEW TWEET FROM @{username}! 🚨")
+                            print(f"Content: {tweet.text}")
+                            print("🐦" * 25 + "\n")
+                            
+                            # 1. Parse text directly for codes
+                            codes = self.ocr_solver.find_lucid_codes(tweet.text)
+                            
+                            # 2. Check media attachments for codes (images with red scribbles)
+                            media = getattr(tweet, "media", None) or getattr(tweet, "extended_entities", {}).get("media", [])
+                            if media:
+                                image_codes = await self.process_tweet_media(session, media)
+                                codes.extend(image_codes)
+                                
+                            # Remove duplicates
+                            codes = list(set(codes))
+                            
+                            if codes:
+                                logger.info(f"⚡ Codes spotted in tweet from @{username}: {codes}. Dispatching claims...")
+                                for code in codes:
+                                    # Trigger redemption callback asynchronously
+                                    asyncio.create_task(self.claim_callback(code))
+                                    
                     is_first_check = False
                 except Exception as e:
                     logger.error(f"⚠️ Error polling X timeline: {e}")
-                    # If we get rate limited (429), back off for 90 seconds to reset rate limit window
+                    # If we get rate limited (429), back off for 300 seconds to reset rate limit window
                     if "429" in str(e) or "limit" in str(e).lower():
                         backoff_time = 300
                         logger.warning(f"⏳ Rate limit exceeded (429) detected. Sleeping for {backoff_time} seconds (5 minutes) to let Twitter reset your rate limit window...")
