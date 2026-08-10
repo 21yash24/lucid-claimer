@@ -117,17 +117,36 @@ class OcrSolver:
                 target_path = img_path
                 if preprocessed_path:
                     try:
+                        from PIL import ImageOps
                         img = Image.open(img_path).convert("RGB")
                         pixels = img.load()
                         width, height = img.size
-                        # Simple PIL-based red channel filter
+                        
+                        # 1. Clear red pixels (be careful not to clean white text)
                         for y in range(height):
                             for x in range(width):
                                 r, g, b = pixels[x, y]
-                                # If the pixel is red (high red, low green/blue)
-                                if r > 100 and r - g > 30 and r - b > 30:
-                                    pixels[x, y] = (15, 15, 15)  # Replace with dark background
-                        img.save(preprocessed_path)
+                                # Red is high, Green and Blue are relatively low
+                                if r > 90 and g < 130 and b < 130 and r - g > 35 and r - b > 35:
+                                    pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
+                                    
+                        # 2. Convert to grayscale
+                        gray = img.convert("L")
+                        
+                        # 3. Apply thresholding (make text white, background black)
+                        thresh = gray.point(lambda p: 255 if p > 100 else 0)
+                        
+                        # 4. Invert (Tesseract prefers black text on white background)
+                        inverted = ImageOps.invert(thresh)
+                        
+                        # 5. Resize by 3.0x using BICUBIC for clean anti-aliased larger text
+                        try:
+                            resample_mode = Image.Resampling.BICUBIC
+                        except AttributeError:
+                            resample_mode = Image.BICUBIC
+                            
+                        resized = inverted.resize((int(width * 3), int(height * 3)), resample_mode)
+                        resized.save(preprocessed_path)
                         target_path = preprocessed_path
                         logger.info(f"🎨 PIL preprocessed image saved to: {preprocessed_path}")
                     except Exception as pe:
