@@ -74,9 +74,15 @@ class XMonitor:
         """
         extracted_codes = []
         for media in media_list:
-            # We want the photo media type
-            media_url = media.get("media_url_https") or media.get("url")
-            if not media_url or media.get("type") != "photo":
+            media_url = getattr(media, "url", None)
+            media_type = getattr(media, "type", None)
+            
+            # Check if it's a dict (fallback for raw JSON objects)
+            if isinstance(media, dict):
+                media_url = media.get("media_url_https") or media.get("url")
+                media_type = media.get("type")
+
+            if not media_url or media_type != "photo":
                 continue
                 
             logger.info(f"📸 Image attachment detected: {media_url}. Downloading...")
