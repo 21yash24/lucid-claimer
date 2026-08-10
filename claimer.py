@@ -168,25 +168,31 @@ class MultiAccountClaimer:
 
     async def claim_all_accounts(self, code: str):
         """
-        Fires simultaneous claim POST requests across ALL configured accounts using asyncio.gather.
+        Claims sequentially across all configured accounts.
+        Account 1 goes first, then waits 3-4 seconds, then Account 2, etc.
         """
+        import random
+
         if not self.account_tokens and not self.credentials:
             logger.error("No account tokens or login credentials configured to claim drops!")
             return []
 
-        logger.info(f"🔥 DROPPED CODE DETECTED: '{code}' — Triggering claim for {len(self.account_tokens)} accounts simultaneously!")
+        logger.info(f"🔥 DROPPED CODE DETECTED: '{code}' — Claiming sequentially across {len(self.account_tokens)} account(s).")
         start_batch = time.perf_counter()
 
-        tasks = [
-            self.claim_for_single_account(idx, token, code)
-            for idx, token in enumerate(self.account_tokens)
-        ]
+        results = []
+        for idx, token in enumerate(self.account_tokens):
+            result = await self.claim_for_single_account(idx, token, code)
+            results.append(result)
 
-        # Execute all accounts in parallel at the exact same millisecond
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Wait 3-4 seconds before next account (skip delay after last account)
+            if idx < len(self.account_tokens) - 1:
+                delay = random.uniform(3.0, 4.0)
+                logger.info(f"⏳ Waiting {delay:.1f}s before next account...")
+                await asyncio.sleep(delay)
 
         total_elapsed_ms = (time.perf_counter() - start_batch) * 1000
-        logger.info(f"🏁 Batch claim finished in {total_elapsed_ms:.1f}ms for all accounts.")
+        logger.info(f"🏁 Sequential claim finished in {total_elapsed_ms:.1f}ms for all accounts.")
         return results
 
     async def checkout_all_accounts(self, code: str, plan_id: str = "50k"):
