@@ -212,8 +212,11 @@ class MultiAccountClaimer:
 
     async def checkout_single_account(self, account_index: int, token: str, code: str, plan_id: str) -> Dict:
         """
-        Submits a discount/free coupon code directly to the Stripe checkout-session API endpoint.
-        With automatic 401 token refresh and 429 rate limit backing off.
+        Submits coupon using WooCommerce Cart API flow:
+          1. POST /cart/add-item (puts product in cart)
+          2. POST /cart/apply-coupon (applies discount code)
+          3. POST /checkout (completes transaction)
+        Supports auto-refresh on 401 and handles Cart-Token propagation.
         """
         if not token:
             if await self.refresh_token(account_index):
@@ -221,66 +224,128 @@ class MultiAccountClaimer:
             else:
                 return {"account": account_index + 1, "success": False, "error": "No token available"}
 
-        url = "https://dash.lucidtrading.com/api/stripe/checkout-session"
-        auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
-        headers = {
-            "Authorization": auth_header,
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
-            "Origin": "https://dash.lucidtrading.com",
-            "Referer": "https://dash.lucidtrading.com/",
-            "Cookie": config.BROWSER_COOKIE
-        }
-        payload = {
-            "planId": plan_id,
-            "couponCode": code
+        # Map plan labels to WooCommerce Product IDs
+        PLAN_PRODUCT_MAP = {
+            "25k": 56546,
+            "50k": 32272,
+            "100k": 32273,
+            "150k": 32271
         }
         
-        max_attempts = 3
-        for attempt in range(1, max_attempts + 1):
-            try:
-                # Use persistent connection session
-                async with self.session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    text = await resp.text()
-                    
-                    # 1. Handle HTTP 401 Unauthorized (refreshes Bearer token automatically)
-                    if resp.status in (401, 403):
-                        logger.warning(f"⚠️ [Account #{account_index + 1}] Checkout token expired. Refreshing token...")
-                        if await self.refresh_token(account_index):
-                            token = self.account_tokens[account_index]
-                            auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
-                            headers["Authorization"] = auth_header
-                            continue
-                    
-                    # 2. Handle HTTP 429 Rate Limiting (back off and try again)
-                    if resp.status == 429 and attempt < max_attempts:
-                        logger.warning(f"⏳ [Account #{account_index + 1}] Checkout rate-limited (HTTP 429). Retrying in 1.5s (Attempt {attempt}/{max_attempts})...")
-                        await asyncio.sleep(1.5)
-                        continue
-                        
-                    if resp.status in (200, 201):
-                        body_data = {}
-                        try:
-                            body_data = await resp.json(content_type=None) if text.strip() else {}
-                        except Exception:
-                            body_data = {"_raw": text}
-                        logger.info(f"🎉 [Account #{account_index + 1}] REAL CHECKOUT SUCCESS (HTTP {resp.status}) plan='{plan_id}' code='{code}': {body_data}")
-                        return {"account": account_index + 1, "success": True, "status": resp.status, "plan": plan_id}
-                    elif resp.status == 204:
-                        # 204 = server accepted the POST but did NOTHING — coupon/plan invalid or no event
-                        logger.warning(f"⚠️ [Account #{account_index + 1}] Checkout returned 204 (empty/no-op) for plan '{plan_id}' — NOT a real success.")
-                        return {"account": account_index + 1, "success": False, "status": 204, "error": "204 no-op"}
+        normalized_plan = str(plan_id).lower().replace(" ", "").strip()
+        product_id = PLAN_PRODUCT_MAP.get(normalized_plan)
+        if not product_id:
+            logger.error(f"❌ Invalid plan label: '{plan_id}'. Supported: 25k, 50k, 100k, 150k")
+            return {"account": account_index + 1, "success": False, "error": f"Invalid plan: {plan_id}"}
+
+        # Billing details payload for WooCommerce checkout
+        billing_payload = {
+            "billing_address": {
+                "first_name": "Lucid",
+                "last_name": "Trader",
+                "email": self.credentials[account_index][0] if account_index < len(self.credentials) else "trader@lucidtrading.com",
+                "country": "US",
+                "state": "TX",
+                "city": "Austin",
+                "address_1": "123 Main St",
+                "postcode": "78701",
+                "phone": "5125550199"
+            },
+            "payment_method": "",
+            "payment_data": []
+        }
+
+        base_url = "https://lucidtrading.com/wp-json/wc/store/v1"
+        auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
+        
+        headers = {
+            "Authorization": auth_header,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Android; Mobile) LucidApp/90.0",
+            "Origin": "https://dash.lucidtrading.com",
+            "Referer": "https://dash.lucidtrading.com/"
+        }
+
+        cart_token = None
+
+        try:
+            # ── STEP 1: Add item to cart ──────────────────────────────────
+            add_url = f"{base_url}/cart/add-item"
+            add_payload = {"id": product_id, "quantity": 1}
+            
+            logger.info(f"🛒 [Account #{account_index + 1}] Adding Product {product_id} ({normalized_plan}) to cart...")
+            async with self.session.post(add_url, json=add_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+                text = await resp.text()
+                
+                # Check for token expiry
+                if resp.status in (401, 403):
+                    logger.warning(f"🔐 [Account #{account_index + 1}] Auth expired on Cart-Add. Refreshing...")
+                    if await self.refresh_token(account_index):
+                        token = self.account_tokens[account_index]
+                        auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
+                        headers["Authorization"] = auth_header
+                        # Retry once
+                        async with self.session.post(add_url, json=add_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=6)) as r2:
+                            text = await r2.text()
+                            resp = r2
                     else:
-                        logger.warning(f"❌ [Account #{account_index + 1}] Checkout failed (HTTP {resp.status}) plan='{plan_id}': {text[:150]}")
-                        return {"account": account_index + 1, "success": False, "status": resp.status, "error": text}
-            except Exception as e:
-                if attempt < max_attempts:
-                    logger.warning(f"⚠️ [Account #{account_index + 1}] Exception during checkout attempt {attempt}: {e}. Retrying in 1.0s...")
-                    await asyncio.sleep(1.0)
-                    continue
-                logger.error(f"⚠️ [Account #{account_index + 1}] Exception during checkout for plan '{plan_id}': {e}")
-                return {"account": account_index + 1, "success": False, "error": str(e)}
-        return {"account": account_index + 1, "success": False, "error": "Max checkout attempts reached"}
+                        return {"account": account_index + 1, "success": False, "error": "Auth refresh failed"}
+
+                if resp.status not in (200, 201):
+                    logger.error(f"❌ [Account #{account_index + 1}] Add-to-cart failed (HTTP {resp.status}): {text[:150]}")
+                    return {"account": account_index + 1, "success": False, "error": f"Cart add failed: {resp.status}"}
+
+                # Capture Cart-Token from response header
+                cart_token = resp.headers.get("Cart-Token") or resp.headers.get("cart-token")
+                if cart_token:
+                    headers["Cart-Token"] = cart_token
+                    logger.debug(f"🔑 Captured Cart-Token: {cart_token[:15]}...")
+
+            # ── STEP 2: Apply Coupon ──────────────────────────────────────
+            coupon_url = f"{base_url}/cart/apply-coupon"
+            coupon_payload = {"code": code}
+            
+            logger.info(f"🎟️ [Account #{account_index + 1}] Applying coupon '{code}'...")
+            async with self.session.post(coupon_url, json=coupon_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+                text = await resp.text()
+                
+                # Update Cart-Token if sent
+                ct = resp.headers.get("Cart-Token") or resp.headers.get("cart-token")
+                if ct:
+                    cart_token = ct
+                    headers["Cart-Token"] = ct
+
+                if resp.status not in (200, 201):
+                    # Coupon invalid or expired
+                    logger.warning(f"⚠️ [Account #{account_index + 1}] Coupon application rejected (HTTP {resp.status}): {text[:150]}")
+                    return {"account": account_index + 1, "success": False, "error": f"Coupon rejected: {resp.status}"}
+
+                logger.info(f"✅ [Account #{account_index + 1}] Coupon '{code}' applied successfully!")
+
+            # ── STEP 3: Complete free order checkout ──────────────────────
+            checkout_url = f"{base_url}/checkout"
+            
+            logger.info(f"🚀 [Account #{account_index + 1}] Completing checkout order...")
+            async with self.session.post(checkout_url, json=billing_payload, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                text = await resp.text()
+                
+                try:
+                    resp_json = json.loads(text) if text.strip() else {}
+                except Exception:
+                    resp_json = {"_raw": text}
+
+                if resp.status in (200, 201):
+                    order_id = resp_json.get("order_id") or resp_json.get("id")
+                    logger.info(f"🎉🎉 [Account #{account_index + 1}] CHECKOUT SUCCESS! Created Order ID: {order_id}")
+                    return {"account": account_index + 1, "success": True, "status": resp.status, "plan": plan_id, "order_id": order_id}
+                else:
+                    logger.error(f"❌ [Account #{account_index + 1}] Final checkout failed (HTTP {resp.status}): {text[:200]}")
+                    return {"account": account_index + 1, "success": False, "status": resp.status, "error": text[:150]}
+
+        except Exception as e:
+            logger.error(f"💥 [Account #{account_index + 1}] WooCommerce checkout exception: {e}")
+            return {"account": account_index + 1, "success": False, "error": str(e)}
 
     async def close(self):
         if self.session:
