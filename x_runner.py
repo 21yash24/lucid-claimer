@@ -15,7 +15,8 @@ def _patched_tcp_init(self, *args, **kwargs):
     _orig_tcp_init(self, *args, **kwargs)
 aiohttp.TCPConnector.__init__ = _patched_tcp_init
 
-sys.path.append("/Users/yashjha/.gemini/antigravity/scratch/lucid_claimer")
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from claimer import MultiAccountClaimer
 from x_monitor import XMonitor
