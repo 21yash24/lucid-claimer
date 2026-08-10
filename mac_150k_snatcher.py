@@ -180,46 +180,51 @@ def find_and_click_proceed_button():
 # Chrome auto-paste
 # ────────────────────────────────────────────────────────
 def paste_code_to_chrome(code: str):
+    """
+    Pastes code into the Lucid Trading checkout coupon field and clicks Apply Coupon.
+    Uses fixed hardcoded display coordinates confirmed working on this Mac:
+      - Coupon input box:    (325, 220)
+      - Apply Coupon button: (532, 220)
+      - PROCEED TO PAYMENT:  (323, 760)
+    """
     import time
+
     # Put code in clipboard
     subprocess.run(['pbcopy'], input=code.encode('utf-8'))
 
-    # Focus Chrome
-    subprocess.run(['osascript', '-e', 'tell application "Google Chrome" to activate'], capture_output=True)
-    time.sleep(0.2)
+    # 1. Focus Chrome
+    subprocess.run(
+        ['osascript', '-e', 'tell application "Google Chrome" to activate'],
+        capture_output=True
+    )
+    time.sleep(0.3)
 
-    coords = find_coupon_input_coords()
-    if coords:
-        ix, iy, bx, by = coords
-        native_mac_click(ix, iy)
-        time.sleep(0.1)
-        subprocess.run(['osascript', '-e', '''
-        tell application "System Events"
-            keystroke "a" using {command down}
-            delay 0.05
-            keystroke "v" using {command down}
-        end tell
-        '''], capture_output=True)
-        time.sleep(0.15)
-        native_mac_click(bx, by)
-        logger.info(f"🖱️ Clicked input ({ix},{iy}), pasted '{code}', clicked Apply Coupon ({bx},{by})!")
-    else:
-        # Fallback: just paste via keyboard shortcut
-        subprocess.run(['osascript', '-e', '''
-        tell application "System Events"
-            keystroke "v" using {command down}
-            delay 0.2
-            key code 48
-            delay 0.1
-            key code 36
-        end tell
-        '''], capture_output=True)
-        logger.info(f"🖱️ Fallback paste of '{code}' into active field!")
+    # 2. Click coupon input box at fixed coord
+    native_mac_click(325, 220)
+    time.sleep(0.15)
 
-    # Wait for coupon validation then click PROCEED
+    # 3. Select all existing text + paste new code
+    subprocess.run(['osascript', '-e', '''
+    tell application "System Events"
+        keystroke "a" using {command down}
+        delay 0.05
+        keystroke "v" using {command down}
+    end tell
+    '''], capture_output=True)
+    time.sleep(0.15)
+
+    # 4. Click Apply Coupon button at fixed coord
+    native_mac_click(532, 220)
+    logger.info(f"🖱️ Clicked input (325,220), pasted '{code}', clicked Apply Coupon (532,220)!")
+
+    # 5. Wait for coupon validation
     time.sleep(2.5)
-    if not find_and_click_proceed_button():
-        logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click manually if valid!")
+
+    # 6. Click PROCEED TO PAYMENT at fixed coord
+    native_mac_click(323, 760)
+    logger.info(f"🖱️ Clicked PROCEED TO PAYMENT (323,760)!")
+
+
 
 
 # ────────────────────────────────────────────────────────
