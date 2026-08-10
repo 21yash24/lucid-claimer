@@ -41,18 +41,69 @@ claimer = MultiAccountClaimer(
     config.LUCID_ACCOUNTS
 )
 
+def find_and_click_green_button():
+    """
+    Takes a live Mac screenshot, finds the bright green PROCEED TO PAYMENT
+    button by color, and clicks its center using osascript mouse events.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        shot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "screen_shot.png")
+        subprocess.run(['screencapture', '-x', shot_path], capture_output=True)
+
+        img = cv2.imread(shot_path)
+        if img is None:
+            return False
+
+        # Detect the bright green button (PROCEED TO PAYMENT is a vivid green)
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower_green = np.array([40, 100, 100])
+        upper_green = np.array([80, 255, 255])
+        mask = cv2.inRange(hsv, lower_green, upper_green)
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            logger.warning("⚠️ Green button not found on screen!")
+            return False
+
+        # Get the largest green region (the PROCEED TO PAYMENT button)
+        largest = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(largest) < 1000:  # too small — skip
+            return False
+
+        M = cv2.moments(largest)
+        cx = int(M["m10"] / M["m00"])
+        cy = int(M["m01"] / M["m00"])
+
+        logger.info(f"🎯 Found green PROCEED TO PAYMENT button at screen coords ({cx}, {cy})")
+
+        # Click that exact position using osascript
+        applescript_click = f'''
+        tell application "System Events"
+            click at {{{cx}, {cy}}}
+        end tell
+        '''
+        subprocess.run(['osascript', '-e', applescript_click], capture_output=True)
+        logger.info(f"🏆 Clicked PROCEED TO PAYMENT at ({cx}, {cy})!")
+        return True
+
+    except Exception as e:
+        logger.debug(f"Green button click error: {e}")
+        return False
+
 def paste_code_to_frontmost_chrome(code: str):
     """
-    Pure keyboard automation on the open Lucid 150K modal:
-    1. Paste code into Apply Coupon Code field
-    2. Tab → Enter (clicks Apply Coupon)
-    3. Wait 2.5s for server validation
-    4. Tab x6 past radio buttons/checkboxes → Enter (PROCEED TO PAYMENT)
+    Full automated checkout:
+    1. Paste code → Tab → Enter (Apply Coupon)
+    2. Wait 2.5s for server validation
+    3. Screenshot → detect green PROCEED TO PAYMENT button → click it
     """
     try:
         subprocess.run(['pbcopy'], input=code.encode('utf-8'))
 
-        # Step 1+2: Paste + Apply Coupon
+        # Step 1: Paste + Apply Coupon
         applescript_step1 = '''
         tell application "Google Chrome" to activate
         delay 0.15
@@ -67,29 +118,13 @@ def paste_code_to_frontmost_chrome(code: str):
         subprocess.run(['osascript', '-e', applescript_step1], capture_output=True)
         logger.info(f"🖱️ Step 1 — Pasted '{code}' + clicked Apply Coupon!")
 
-        # Step 3: Wait for coupon to validate
+        # Step 2: Wait for coupon validation
         import time; time.sleep(2.5)
 
-        # Step 4: Tab 6x to reach PROCEED TO PAYMENT, then Enter
-        applescript_step2 = '''
-        tell application "System Events"
-            key code 48
-            delay 0.05
-            key code 48
-            delay 0.05
-            key code 48
-            delay 0.05
-            key code 48
-            delay 0.05
-            key code 48
-            delay 0.05
-            key code 48
-            delay 0.1
-            key code 36
-        end tell
-        '''
-        subprocess.run(['osascript', '-e', applescript_step2], capture_output=True)
-        logger.info(f"🏆 Step 2 — Tabbed to PROCEED TO PAYMENT and pressed Enter!")
+        # Step 3: Find and click green PROCEED TO PAYMENT button
+        clicked = find_and_click_green_button()
+        if not clicked:
+            logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click it manually!")
 
     except Exception as e:
         logger.debug(f"Chrome auto-paste error: {e}")
