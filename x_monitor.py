@@ -172,8 +172,8 @@ class XMonitor:
                     logger.error(f"⚠️ Error polling X timeline: {e}")
                     # If we get rate limited (429), back off for 90 seconds to reset rate limit window
                     if "429" in str(e) or "limit" in str(e).lower():
-                        backoff_time = 90
-                        logger.warning(f"⏳ Rate limit exceeded (429) detected. Backing off/sleeping for {backoff_time} seconds...")
+                        backoff_time = 300
+                        logger.warning(f"⏳ Rate limit exceeded (429) detected. Sleeping for {backoff_time} seconds (5 minutes) to let Twitter reset your rate limit window...")
                         await asyncio.sleep(backoff_time)
                         continue
                     
