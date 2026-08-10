@@ -41,6 +41,24 @@ claimer = MultiAccountClaimer(
     config.LUCID_ACCOUNTS
 )
 
+def paste_code_to_frontmost_chrome(code: str):
+    """Activates Google Chrome on macOS, pastes the code, and presses Enter."""
+    try:
+        subprocess.run(['pbcopy'], input=code.encode('utf-8'))
+        applescript = '''
+        tell application "Google Chrome" to activate
+        delay 0.1
+        tell application "System Events"
+            keystroke "v" using {command down}
+            delay 0.1
+            key code 36
+        end tell
+        '''
+        subprocess.run(['osascript', '-e', applescript], capture_output=True)
+        logger.info(f"🖱️ Auto-pasted '{code}' into frontmost Chrome window!")
+    except Exception as e:
+        logger.debug(f"Chrome auto-paste error: {e}")
+
 async def snatch_code(code: str, origin: str = "Manual"):
     code = code.strip().upper()
     if not code or code in claimed_codes:
@@ -53,16 +71,19 @@ async def snatch_code(code: str, origin: str = "Manual"):
     print("🔥" * 30 + "\n")
     logger.info(f"⚡ [150K SNATCHER] Triggering instant checkout for code: '{code}'...")
 
-    # 1. Trigger Direct API Checkout for 150K Account (Primary Target)
+    # 1. Instantly auto-paste into open Chrome browser window on Mac screen
+    paste_code_to_frontmost_chrome(code)
+
+    # 2. Trigger Direct API Checkout for 150K Account (Primary Target)
     task_150k = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="150k"))
     
-    # 2. Trigger Secret Drop Redemption API (Fallback)
+    # 3. Trigger Secret Drop Redemption API (Fallback)
     task_secret = asyncio.create_task(claimer.claim_all_accounts(code))
 
-    # 3. Trigger 50K Account Checkout (Secondary Fallback)
+    # 4. Trigger 50K Account Checkout (Secondary Fallback)
     task_50k = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="50k"))
 
-    # 4. If Playwright is available, launch browser auto-filler
+    # 5. If Playwright is available, launch browser auto-filler
     try:
         from checkout_buyer import purchase_evaluation_account
         asyncio.create_task(purchase_evaluation_account(code))
