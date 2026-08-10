@@ -1,11 +1,11 @@
 """
 mac_150k_snatcher.py
 --------------------
-EXCLUSIVE MAC SNATCHER FOR CJ WAWA'S 150K ACCOUNT DROP:
-1. Polls Twitter/X feed (@cj_wawa) continuously.
-2. Monitors macOS Clipboard (pbpaste) — if you copy any code, it instantly snatches it!
-3. Accepts manual terminal input — type/paste code and hit Enter to trigger instantly.
-4. Fires parallel 150K account checkout via direct API + secret redemption + browser.
+CLEAN VERSION — Only 2 triggers:
+  1. X Monitor: Polls @cj_wawa & @yashhjhaa for NEW tweets with coupon codes.
+  2. Terminal Input: Manually type/paste a code and press ENTER.
+
+NO clipboard snooping. NO screen OCR. NO random code triggering.
 """
 
 import os
@@ -13,12 +13,11 @@ import sys
 import asyncio
 import logging
 import subprocess
-import certifi
-import ssl
 import ctypes
+import ssl
 import aiohttp
 
-# Bypass SSL verification issues on Mac
+# Bypass SSL on Mac
 ssl._create_default_https_context = ssl._create_unverified_context
 _orig_tcp_init = aiohttp.TCPConnector.__init__
 def _patched_tcp_init(self, *args, **kwargs):
@@ -35,239 +34,197 @@ from parser import extract_all_giveaway_codes
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("150kSnatcher")
 
-claimed_codes = set()
+claimed_codes: set = set()
 claimer = MultiAccountClaimer(
     config.REDEMPTION_API_URL,
     config.ACCOUNT_TOKENS,
     config.LUCID_ACCOUNTS
 )
 
-def native_mac_click(x: int, y: int):
-    """Generates native macOS hardware mouse click at display point (x, y)."""
+# ────────────────────────────────────────────────────────
+# Native Mac mouse click (CoreGraphics)
+# ────────────────────────────────────────────────────────
+def native_mac_click(x: int, y: int) -> bool:
     try:
-        cg = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/ApplicationServices.framework/Frameworks/CoreGraphics.framework/CoreGraphics')
-        
+        cg = ctypes.cdll.LoadLibrary(
+            '/System/Library/Frameworks/ApplicationServices.framework'
+            '/Frameworks/CoreGraphics.framework/CoreGraphics'
+        )
+
         class CGPoint(ctypes.Structure):
             _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
         cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, CGPoint, ctypes.c_uint32]
-        cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        cg.CGEventCreateMouseEvent.restype  = ctypes.c_void_p
         cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
-        cg.CGEventPost.restype = None
+        cg.CGEventPost.restype  = None
 
-        pt = CGPoint(float(x), float(y))
-        
-        # Mouse down (1), up (2)
+        pt     = CGPoint(float(x), float(y))
         e_down = cg.CGEventCreateMouseEvent(None, 1, pt, 0)
         cg.CGEventPost(0, e_down)
         import time; time.sleep(0.05)
-        e_up = cg.CGEventCreateMouseEvent(None, 2, pt, 0)
+        e_up   = cg.CGEventCreateMouseEvent(None, 2, pt, 0)
         cg.CGEventPost(0, e_up)
-        logger.info(f"🖱️ Native CGEvent Clicked at display coords ({x}, {y})")
+        logger.info(f"🖱️ Native CGEvent Clicked at ({x}, {y})")
         return True
     except Exception as e:
         logger.debug(f"Native Mac click error: {e}")
         return False
 
-def find_and_click_green_button():
+# ────────────────────────────────────────────────────────
+# Screen helpers: find coupon input + Apply Coupon button
+# ────────────────────────────────────────────────────────
+def _get_display_scale():
+    """Return (display_w, display_h, img_w, img_h, scale_x, scale_y)."""
+    import cv2
+    shot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "screen_shot.png")
+    os.makedirs(os.path.dirname(shot_path), exist_ok=True)
+    subprocess.run(['screencapture', '-x', shot_path], capture_output=True)
+    img = cv2.imread(shot_path)
+    if img is None:
+        raise RuntimeError("screencapture failed")
+    img_h, img_w = img.shape[:2]
+    res = subprocess.run(
+        ['osascript', '-e', 'tell application "Finder" to get bounds of window of desktop'],
+        capture_output=True, text=True
+    )
+    parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1470, 956]
+    disp_w = parts[2] - parts[0]
+    disp_h = parts[3] - parts[1]
+    return img, img_w, img_h, disp_w, disp_h, img_w / float(disp_w), img_h / float(disp_h)
+
+
+def find_coupon_input_coords():
     """
-    Takes a live Mac screenshot, finds the bright green PROCEED TO PAYMENT
-    button by color, and clicks its center using native CGEvent mouse clicks.
-    """
-    try:
-        import cv2
-        import numpy as np
-
-        shot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "screen_shot.png")
-        subprocess.run(['screencapture', '-x', shot_path], capture_output=True)
-
-        img = cv2.imread(shot_path)
-        if img is None:
-            return False
-
-        img_h, img_w = img.shape[:2]
-
-        applescript_screen = 'tell application "Finder" to get bounds of window of desktop'
-        res = subprocess.run(['osascript', '-e', applescript_screen], capture_output=True, text=True)
-        parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1440, 900]
-        disp_w = parts[2] - parts[0]
-        disp_h = parts[3] - parts[1]
-
-        scale_x = img_w / float(disp_w)
-        scale_y = img_h / float(disp_h)
-
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        lower_green = np.array([40, 100, 100])
-        upper_green = np.array([80, 255, 255])
-        mask = cv2.inRange(hsv, lower_green, upper_green)
-
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            logger.warning("⚠️ Green button not found on screen!")
-            return False
-
-        wide_contours = []
-        for c in contours:
-            x, y, w, h = cv2.boundingRect(c)
-            area = cv2.contourArea(c)
-            if (w / scale_x) > 250 and w > h * 2 and area > 3000 * (scale_x * scale_y):
-                wide_contours.append(c)
-
-        if not wide_contours:
-            logger.warning("⚠️ PROCEED TO PAYMENT button not found (no wide green region)!")
-            return False
-
-        largest = max(wide_contours, key=cv2.contourArea)
-        M = cv2.moments(largest)
-        cx_px = int(M["m10"] / M["m00"])
-        cy_px = int(M["m01"] / M["m00"])
-
-        cx = int(cx_px / scale_x)
-        cy = int(cy_px / scale_y)
-
-        logger.info(f"🎯 Found green PROCEED TO PAYMENT button at display coords ({cx}, {cy})")
-        return native_mac_click(cx, cy)
-
-    except Exception as e:
-        logger.debug(f"Green button click error: {e}")
-        return False
-
-def find_and_click_coupon_field_and_button():
-    """
-    Finds the 'Apply Coupon Code' input area or green 'Apply Coupon' button at top of modal,
-    clicks the input box to focus it, and returns True. Automatically accounts for Retina display scaling.
+    Returns (input_x, input_y, btn_x, btn_y) in display points
+    by looking for the small green 'Apply Coupon' button (top half of screen).
     """
     try:
-        import cv2
-        import numpy as np
-
-        shot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "screen_shot.png")
-        subprocess.run(['screencapture', '-x', shot_path], capture_output=True)
-
-        img = cv2.imread(shot_path)
-        if img is None:
-            return None
-
-        img_h, img_w = img.shape[:2]
-
-        applescript_screen = 'tell application "Finder" to get bounds of window of desktop'
-        res = subprocess.run(['osascript', '-e', applescript_screen], capture_output=True, text=True)
-        parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1440, 900]
-        disp_w = parts[2] - parts[0]
-        disp_h = parts[3] - parts[1]
-
-        scale_x = img_w / float(disp_w)
-        scale_y = img_h / float(disp_h)
+        import cv2, numpy as np
+        img, img_w, img_h, disp_w, disp_h, scale_x, scale_y = _get_display_scale()
 
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        lower_green = np.array([40, 100, 100])
-        upper_green = np.array([80, 255, 255])
-        mask = cv2.inRange(hsv, lower_green, upper_green)
-
+        mask = cv2.inRange(hsv, np.array([40, 100, 100]), np.array([85, 255, 255]))
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return None
 
-        green_buttons = []
+        buttons = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             area = cv2.contourArea(c)
             y_disp = y / scale_y
             w_disp = w / scale_x
-            # Top half of screen only (Apply Coupon button is near top of modal, y < 450 in display points)
             if area > 300 * (scale_x * scale_y) and w > h and y_disp < 450 and w_disp < 220:
-                green_buttons.append((x, y, w, h, c))
+                buttons.append((x, y, w, h))
 
-        if not green_buttons:
-            logger.warning("⚠️ Apply Coupon green button not found in top half of modal!")
+        if not buttons:
+            logger.warning("⚠️ Apply Coupon button not found in top half of modal!")
             return None
 
-        green_buttons.sort(key=lambda b: b[1])
+        buttons.sort(key=lambda b: b[1])
+        bx, by, bw, bh = buttons[0]
 
-        top_btn = green_buttons[0]
-        bx_px, by_px, bw_px, bh_px, _ = top_btn
+        # Input box is ~150px to the left of the button (in screen pixels)
+        ix_px = max(10, bx - int(150 * scale_x))
+        iy_px = by + bh // 2
 
-        ix_px = max(10, bx_px - int(150 * scale_x))
-        iy_px = by_px + bh_px // 2
-
-        btn_center_x_px = bx_px + bw_px // 2
-        btn_center_y_px = by_px + bh_px // 2
-
-        input_x = int(ix_px / scale_x)
-        input_y = int(iy_px / scale_y)
-        btn_x = int(btn_center_x_px / scale_x)
-        btn_y = int(btn_center_y_px / scale_y)
-
-        logger.info(f"🎯 Display points -> Input field: ({input_x}, {input_y}), Apply Coupon button: ({btn_x}, {btn_y}) [Scale: {scale_x:.2f}]")
-        return (input_x, input_y, btn_x, btn_y)
-
+        return (
+            int(ix_px / scale_x),          # input display x
+            int(iy_px / scale_y),           # input display y
+            int((bx + bw // 2) / scale_x), # button display x
+            int((by + bh // 2) / scale_y), # button display y
+        )
     except Exception as e:
         logger.debug(f"Coupon field detection error: {e}")
         return None
 
-def paste_code_to_frontmost_chrome(code: str):
+
+def find_and_click_proceed_button():
     """
-    Full automated checkout:
-    1. Focuses Chrome.
-    2. Detects 'Apply Coupon Code' input box on screen and clicks it using native CoreGraphics.
-    3. Pastes code and clicks green 'Apply Coupon' button.
-    4. Waits 2.5s for validation.
-    5. Screenshot → detects green 'PROCEED TO PAYMENT' button → clicks it.
+    Looks for the wide green PROCEED TO PAYMENT button (bottom half of modal)
+    and clicks it.
     """
     try:
-        import ctypes
-        subprocess.run(['pbcopy'], input=code.encode('utf-8'))
+        import cv2, numpy as np
+        img, img_w, img_h, disp_w, disp_h, scale_x, scale_y = _get_display_scale()
 
-        # Focus Chrome first
-        subprocess.run(['osascript', '-e', 'tell application "Google Chrome" to activate'], capture_output=True)
-        import time; time.sleep(0.2)
+        hsv  = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, np.array([40, 100, 100]), np.array([85, 255, 255]))
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Detect input field and Apply Coupon button on screen
-        coords = find_and_click_coupon_field_and_button()
-        if coords:
-            ix, iy, bx, by = coords
-            # Click input box
-            native_mac_click(ix, iy)
-            time.sleep(0.1)
+        candidates = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            area  = cv2.contourArea(c)
+            y_disp = y / scale_y
+            w_disp = w / scale_x
+            # Wide button in bottom half of screen
+            if area > 1000 * (scale_x * scale_y) and w > h * 3 and y_disp > 450 and w_disp > 200:
+                candidates.append((x, y, w, h))
 
-            # Select all + Paste
-            applescript_paste = '''
-            tell application "System Events"
-                keystroke "a" using {command down}
-                delay 0.05
-                keystroke "v" using {command down}
-            end tell
-            '''
-            subprocess.run(['osascript', '-e', applescript_paste], capture_output=True)
-            time.sleep(0.15)
+        if not candidates:
+            logger.warning("⚠️ PROCEED TO PAYMENT button not found (no wide green region)!")
+            return False
 
-            # Click Apply Coupon button
-            native_mac_click(bx, by)
-            logger.info(f"🖱️ Step 1 — Clicked input box ({ix},{iy}), pasted '{code}', clicked Apply Coupon button ({bx},{by})!")
-        else:
-            applescript_fallback = '''
-            tell application "System Events"
-                keystroke "v" using {command down}
-                delay 0.2
-                key code 48
-                delay 0.1
-                key code 36
-            end tell
-            '''
-            subprocess.run(['osascript', '-e', applescript_fallback], capture_output=True)
-            logger.info(f"🖱️ Step 1 (Fallback) — Pasted '{code}' into active field!")
-
-        # Step 2: Wait for coupon validation
-        time.sleep(2.5)
-
-        # Step 3: Find and click green PROCEED TO PAYMENT button
-        clicked = find_and_click_green_button()
-        if not clicked:
-            logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click it manually if valid!")
-
+        candidates.sort(key=lambda b: b[1])
+        bx, by, bw, bh = candidates[0]
+        cx = int((bx + bw // 2) / scale_x)
+        cy = int((by + bh // 2) / scale_y)
+        logger.info(f"🎯 Found PROCEED TO PAYMENT at display coords ({cx}, {cy})")
+        return native_mac_click(cx, cy)
     except Exception as e:
-        logger.debug(f"Chrome auto-paste error: {e}")
+        logger.debug(f"PROCEED button detection error: {e}")
+        return False
 
+
+# ────────────────────────────────────────────────────────
+# Chrome auto-paste
+# ────────────────────────────────────────────────────────
+def paste_code_to_chrome(code: str):
+    import time
+    # Put code in clipboard
+    subprocess.run(['pbcopy'], input=code.encode('utf-8'))
+
+    # Focus Chrome
+    subprocess.run(['osascript', '-e', 'tell application "Google Chrome" to activate'], capture_output=True)
+    time.sleep(0.2)
+
+    coords = find_coupon_input_coords()
+    if coords:
+        ix, iy, bx, by = coords
+        native_mac_click(ix, iy)
+        time.sleep(0.1)
+        subprocess.run(['osascript', '-e', '''
+        tell application "System Events"
+            keystroke "a" using {command down}
+            delay 0.05
+            keystroke "v" using {command down}
+        end tell
+        '''], capture_output=True)
+        time.sleep(0.15)
+        native_mac_click(bx, by)
+        logger.info(f"🖱️ Clicked input ({ix},{iy}), pasted '{code}', clicked Apply Coupon ({bx},{by})!")
+    else:
+        # Fallback: just paste via keyboard shortcut
+        subprocess.run(['osascript', '-e', '''
+        tell application "System Events"
+            keystroke "v" using {command down}
+            delay 0.2
+            key code 48
+            delay 0.1
+            key code 36
+        end tell
+        '''], capture_output=True)
+        logger.info(f"🖱️ Fallback paste of '{code}' into active field!")
+
+    # Wait for coupon validation then click PROCEED
+    time.sleep(2.5)
+    if not find_and_click_proceed_button():
+        logger.warning("⚠️ Could not auto-click PROCEED TO PAYMENT — click manually if valid!")
+
+
+# ────────────────────────────────────────────────────────
+# Core snatch logic — called ONCE per unique code
+# ────────────────────────────────────────────────────────
 async def snatch_code(code: str, origin: str = "Manual"):
     code = code.strip().upper()
     if not code or code in claimed_codes:
@@ -278,142 +235,81 @@ async def snatch_code(code: str, origin: str = "Manual"):
     print("\n" + "🔥" * 30)
     print(f"🚀   SNATCHING 150K ACCOUNT WITH CODE: '{code}' (Origin: {origin})   🚀")
     print("🔥" * 30 + "\n")
-    logger.info(f"⚡ [150K SNATCHER] Triggering instant checkout for code: '{code}'...")
+    logger.info(f"⚡ Triggering instant checkout for code: '{code}'...")
 
-    # 1. Instantly auto-paste into open Chrome browser window on Mac screen
-    paste_code_to_frontmost_chrome(code)
+    # 1. Auto-paste into Chrome (runs synchronously so it happens first)
+    paste_code_to_chrome(code)
 
-    # 2. Trigger Direct API Checkout for 150K Account (Primary Target)
-    task_150k = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="150k"))
-    
-    # 3. Trigger Secret Drop Redemption API (Fallback)
-    task_secret = asyncio.create_task(claimer.claim_all_accounts(code))
+    # 2. Background: Direct API + Secret API checkout
+    task_150k  = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="150k"))
+    task_secret= asyncio.create_task(claimer.claim_all_accounts(code))
+    task_50k   = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="50k"))
 
-    # 4. Trigger 50K Account Checkout (Secondary Fallback)
-    task_50k = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="50k"))
+    await asyncio.gather(task_150k, task_secret, task_50k, return_exceptions=True)
+    logger.info("🏁 Snatch complete for code.")
 
-    # 5. If Playwright is available, launch browser auto-filler
-    try:
-        from checkout_buyer import purchase_evaluation_account
-        asyncio.create_task(purchase_evaluation_account(code))
-    except Exception as e:
-        logger.debug(f"Playwright launcher error: {e}")
 
-    results_150k = await task_150k
-    results_secret = await task_secret
-    results_50k = await task_50k
+# ────────────────────────────────────────────────────────
+# X Tweet callback
+# ────────────────────────────────────────────────────────
+async def x_tweet_callback(codes: list, tweet_text: str = ""):
+    logger.info(f"🐦 New tweet! Codes found: {codes}")
+    for c in codes:
+        await snatch_code(c, origin="Twitter/X")
 
-    logger.info("🏁 Snatch attempts complete for code.")
 
-def get_clipboard_text():
-    try:
-        p = subprocess.Popen(['pbpaste'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, _ = p.communicate()
-        return out.decode('utf-8', errors='ignore').strip()
-    except Exception:
-        return ""
-
-async def clipboard_monitor_loop():
-    last_clip = ""
-    while True:
-        try:
-            clip = get_clipboard_text()
-            if clip and clip != last_clip:
-                last_clip = clip
-                # Check if clipboard looks like a coupon code (e.g. LBOX..., CJ150, WAWA150, etc.)
-                codes = extract_all_giveaway_codes(clip)
-                if not codes and len(clip) >= 3 and len(clip) <= 30 and not " " in clip and not "http" in clip:
-                    codes = [clip.strip()]
-                
-                for c in codes:
-                    if c not in claimed_codes:
-                        logger.info(f"📋 Detected code in macOS Clipboard: '{c}'!")
-                        await snatch_code(c, origin="macOS Clipboard")
-        except Exception as e:
-            logger.debug(f"Clipboard check error: {e}")
-        await asyncio.sleep(0.5)
-
-async def mac_screen_ocr_loop():
-    """Takes instant macOS screenshots and runs OCR to catch image drop codes visible on screen."""
-    try:
-        from ocr_solver import OcrSolver
-        ocr = OcrSolver()
-    except Exception as e:
-        logger.debug(f"OCR Solver import warning: {e}")
-        return
-
-    tmp_shot = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "mac_screen.png")
-    while True:
-        try:
-            # Capture full macOS screen instantly
-            res = subprocess.run(['screencapture', '-x', tmp_shot], capture_output=True)
-            if res.returncode == 0 and os.path.exists(tmp_shot):
-                text = ocr.ocr_image(tmp_shot)
-                if text:
-                    codes = extract_all_giveaway_codes(text)
-                    for c in codes:
-                        if c not in claimed_codes:
-                            logger.info(f"👁️ OCR Detected Code on Mac Screen Image: '{c}'!")
-                            await snatch_code(c, origin="macOS Screen OCR")
-        except Exception as e:
-            logger.debug(f"Screen OCR error: {e}")
-        await asyncio.sleep(1.5)
-
+# ────────────────────────────────────────────────────────
+# Terminal input — manual override
+# ────────────────────────────────────────────────────────
 async def terminal_input_loop():
     loop = asyncio.get_running_loop()
     print("\n" + "=" * 65)
-    print("🎯 MAC EXCLUSIVE 150K ACCOUNT ULTRA-SNATCHER IS ACTIVE!")
-    print("   1. Auto-monitoring @cj_wawa Twitter feed (text & image attachments).")
-    print("   2. Auto-monitoring macOS Screen OCR (detects codes in tweet images on screen!).")
-    print("   3. Auto-monitoring macOS Clipboard (copy any code to snatch!).")
-    print("   4. Terminal Input (type/paste any code below & hit ENTER):")
+    print("🎯 MAC 150K SNATCHER IS ACTIVE!")
+    print("   Monitoring: @cj_wawa & @yashhjhaa Twitter/X feed")
+    print("   Manual:     Type/paste a code below and press ENTER")
     print("=" * 65 + "\n")
-
     while True:
         try:
             user_input = await loop.run_in_executor(None, sys.stdin.readline)
-            if user_input:
-                code_str = user_input.strip()
-                if code_str:
-                    await snatch_code(code_str, origin="Terminal Input")
+            if user_input and user_input.strip():
+                await snatch_code(user_input.strip(), origin="Terminal Input")
         except Exception as e:
             logger.error(f"Terminal input error: {e}")
             await asyncio.sleep(1)
 
-async def x_tweet_callback(codes: list, tweet_text: str = ""):
-    logger.info(f"🐦 Tweet detected! Extracted codes: {codes}")
-    for c in codes:
-        await snatch_code(c, origin="Twitter/X (@cj_wawa)")
 
+# ────────────────────────────────────────────────────────
+# Main
+# ────────────────────────────────────────────────────────
 async def main():
     errors = config.validate_config()
     if errors:
-        logger.error("Configuration errors found in .env:")
         for err in errors:
-            logger.error(f" - {err}")
+            logger.error(f"Config error: {err}")
         sys.exit(1)
 
     await claimer.initialize()
 
-    # 1. Launch X Monitor (@cj_wawa & @yashhjhaa feed)
+    # Start X Monitor
     x_mon = XMonitor(x_tweet_callback)
-    x_ok = await x_mon.initialize()
+    x_ok  = await x_mon.initialize()
     if x_ok:
-        logger.info("🐦 Connected to X Monitor for targets!")
+        logger.info("🐦 X Monitor connected! Watching @cj_wawa & @yashhjhaa...")
         asyncio.create_task(x_mon.poll_timeline())
     else:
-        logger.warning("⚠️ X Monitor initialization failed.")
+        logger.warning("⚠️ X Monitor failed to connect. Manual terminal input still works.")
 
-    # 2. Launch Clipboard Monitor (Cmd+C)
-    asyncio.create_task(clipboard_monitor_loop())
-
-    # 3. Launch Terminal Input listener
+    # Block on terminal input (clean exit with Ctrl+C)
     await terminal_input_loop()
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stopping 150K Snatcher...")
+        logger.info("✅ Snatcher stopped cleanly.")
     finally:
-        asyncio.run(claimer.close())
+        try:
+            asyncio.run(claimer.close())
+        except Exception:
+            pass
