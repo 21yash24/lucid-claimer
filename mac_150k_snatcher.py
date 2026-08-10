@@ -43,28 +43,62 @@ claimer = MultiAccountClaimer(
 
 def paste_code_to_frontmost_chrome(code: str):
     """
-    Activates Google Chrome, pastes the code into the Apply Coupon Code field,
-    then presses Tab to move focus to the Apply Coupon button, then Enter to click it.
-    Matches the exact Lucid Trading 150K checkout modal UI.
+    Full automated checkout on the open Lucid Trading 150K modal:
+    1. Focuses Chrome and pastes code into Apply Coupon Code field
+    2. Tabs to Apply Coupon button → Enter (applies coupon)
+    3. Waits 2s for coupon validation
+    4. Uses JavaScript to check terms checkboxes + click PROCEED TO PAYMENT
     """
     try:
         subprocess.run(['pbcopy'], input=code.encode('utf-8'))
-        applescript = '''
+
+        # Step 1 & 2: Paste code + Apply Coupon
+        applescript_paste = '''
         tell application "Google Chrome" to activate
         delay 0.15
         tell application "System Events"
-            -- Paste code into "Apply Coupon Code" input field
             keystroke "v" using {command down}
             delay 0.2
-            -- Tab to focus the green "Apply Coupon" button
             key code 48
             delay 0.1
-            -- Press Enter to click Apply Coupon
             key code 36
         end tell
         '''
-        subprocess.run(['osascript', '-e', applescript], capture_output=True)
-        logger.info(f"🖱️ Pasted '{code}' → Tabbed to Apply Coupon → Pressed Enter in Chrome!")
+        subprocess.run(['osascript', '-e', applescript_paste], capture_output=True)
+        logger.info(f"🖱️ Step 1 — Pasted '{code}' + clicked Apply Coupon in Chrome!")
+
+        # Step 3: Wait for coupon validation (server validates, page updates)
+        import time; time.sleep(2.0)
+
+        # Step 4: JavaScript to check both checkboxes + click PROCEED TO PAYMENT
+        js_checkout = """
+        (function() {
+            // Check all unchecked checkboxes (terms + liability)
+            var checks = document.querySelectorAll('input[type=checkbox]');
+            checks.forEach(function(cb) { if (!cb.checked) cb.click(); });
+
+            // Click PROCEED TO PAYMENT button
+            var buttons = document.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                var txt = (buttons[i].innerText || '').toUpperCase();
+                if (txt.includes('PROCEED') || txt.includes('PAYMENT') || txt.includes('PLACE ORDER')) {
+                    buttons[i].click();
+                    return 'CLICKED: ' + buttons[i].innerText;
+                }
+            }
+            return 'PROCEED button not found';
+        })();
+        """.replace('\n', ' ').replace('"', '\\"')
+
+        applescript_js = f'''
+        tell application "Google Chrome"
+            execute active tab of front window javascript "{js_checkout}"
+        end tell
+        '''
+        res = subprocess.run(['osascript', '-e', applescript_js], capture_output=True, text=True)
+        result = res.stdout.strip() or res.stderr.strip()
+        logger.info(f"🏆 Step 2 — JavaScript checkout result: {result}")
+
     except Exception as e:
         logger.debug(f"Chrome auto-paste error: {e}")
 
