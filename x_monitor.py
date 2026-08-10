@@ -130,12 +130,25 @@ class XMonitor:
             poll_count = 0
             user_objects = {}  # Cache username -> user object
             is_first_check = True
+            current_user_index = 0
             while True:
                 poll_count += 1
-                if poll_count % 5 == 1:
-                    logger.info(f"📡 [X Monitor] Polling {', '.join(target_users_list)} timelines (check #{poll_count})...")
+                
+                # Determine which users to poll during this iteration
+                if is_first_check:
+                    # Startup: poll all users to populate seen_tweets history cleanly
+                    users_to_poll = target_users_list
+                    logger.info(f"📡 [X Monitor] Initializing startup history for all targets: {', '.join(users_to_poll)}...")
+                else:
+                    # Normal run: alternate (stagger) to poll only 1 user per iteration and prevent rate limits
+                    username = target_users_list[current_user_index % len(target_users_list)]
+                    users_to_poll = [username]
+                    current_user_index += 1
+                    if poll_count % 5 == 1:
+                        logger.info(f"📡 [X Monitor] Polling target timeline: @{username} (check #{poll_count})...")
+                
                 try:
-                    for username in target_users_list:
+                    for username in users_to_poll:
                         # Get user profile once and cache it to cut API requests and prevent rate limits
                         if username not in user_objects:
                             user_objects[username] = await self.client.get_user_by_screen_name(username)
