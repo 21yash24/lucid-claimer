@@ -206,7 +206,18 @@ async def snatch_code(code: str, origin: str = "Manual"):
     print("🔥" * 30 + "\n")
     logger.info(f"⚡ Triggering instant checkout for code: '{code}'...")
 
-    # 1. Auto-paste code into Chrome
+    # Open latest tweet image on Mac screen instantly for 100% visual verification
+    try:
+        tmp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images")
+        imgs = [os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir) if f.startswith('tweet_') and f.endswith('.jpg') and not f.endswith('_clean.jpg') and not f.endswith('_nored.jpg') and not f.endswith('_whiteonly.jpg')]
+        imgs.sort(key=os.path.getmtime, reverse=True)
+        if imgs:
+            subprocess.Popen(['open', imgs[0]])
+            logger.info(f"🖼️ Displayed tweet image on screen: {os.path.basename(imgs[0])}")
+    except Exception as e:
+        logger.debug(f"Image open warning: {e}")
+
+    # 1. Auto-paste predicted code into Chrome
     paste_code_to_chrome(code)
 
     # 2. Direct API Checkout
