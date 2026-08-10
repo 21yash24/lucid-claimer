@@ -190,9 +190,8 @@ class XMonitor:
                             
                             if codes:
                                 logger.info(f"⚡ Codes spotted in tweet from @{username}: {codes}. Dispatching claims...")
-                                for code in codes:
-                                    # Trigger redemption callback asynchronously
-                                    asyncio.create_task(self.claim_callback(code, tweet.text))
+                                # Trigger callback with the entire list of codes to allow serialized prioritized checkout
+                                asyncio.create_task(self.claim_callback(codes, tweet.text))
                                     
                     is_first_check = False
                 except Exception as e:

@@ -41,64 +41,105 @@ claimed_codes = set()
 successful_claims = 0
 MAX_CLAIMS = 2  # Target 2 successful claims before stopping
 
-async def claim_code_callback(code: str, tweet_text: str = ""):
+def prioritize_codes(codes: list) -> list:
+    def get_score(c):
+        score = 0
+        c_upper = c.upper()
+        if "LIPE" in c_upper:
+            score += 100
+        if "LUC" in c_upper:
+            score += 50
+        if "100" in c_upper:
+            score += 30
+        if "50" in c_upper or "25" in c_upper:
+            score += 20
+        score += len(c)
+        return score
+    return sorted(codes, key=get_score, reverse=True)
+
+async def claim_code_callback(codes: list, tweet_text: str = ""):
     global successful_claims
     if successful_claims >= MAX_CLAIMS:
         return
-    if code in claimed_codes:
-        logger.info(f"🔁 Code '{code}' already processed, skipping.")
-        return
 
-    claimed_codes.add(code)
-    logger.info(f"⚡ CODE SPOTTED: '{code}' — firing all claim + checkout flows in parallel...")
+    # Prioritize codes (put best matching candidate code first)
+    sorted_codes = prioritize_codes(codes)
+    logger.info(f"⚡ [X Monitor] Prioritized list of spotted codes: {sorted_codes}")
 
-    # Determine target plans from tweet text
-    text_lower = tweet_text.lower() if tweet_text else ""
-    if "100k" in text_lower:
-        plans_to_try = ["100k"]
-    elif "50k" in text_lower and "25k" not in text_lower:
-        plans_to_try = ["50k"]
-    elif "25k" in text_lower and "50k" not in text_lower:
-        plans_to_try = ["25k"]
-    else:
-        # Try both plans in parallel — covers any ambiguous tweet
-        plans_to_try = ["50k", "25k"]
+    for code in sorted_codes:
+        if successful_claims >= MAX_CLAIMS:
+            break
 
-    logger.info(f"🎯 Plans to try: {plans_to_try}")
+        if code in claimed_codes:
+            logger.info(f"🔁 Code '{code}' already processed, skipping.")
+            continue
 
-    # 1. PRIMARY: Direct checkout API — fastest path, runs for ALL plans in parallel
-    checkout_tasks = []
-    for plan in plans_to_try:
-        checkout_tasks.append(asyncio.create_task(claimer.checkout_all_accounts(code, plan)))
+        claimed_codes.add(code)
+        logger.info(f"👉 Processing candidate code: '{code}'...")
 
-    # 2. BACKUP: Secret-code redemption API (in case checkout isn't the right endpoint)
-    redemption_task = asyncio.create_task(claimer.claim_all_accounts(code))
+        # Determine target plans from tweet text
+        text_lower = tweet_text.lower() if tweet_text else ""
+        if "100k" in text_lower:
+            plans_to_try = ["100k"]
+        elif "50k" in text_lower and "25k" not in text_lower:
+            plans_to_try = ["50k"]
+        elif "25k" in text_lower and "50k" not in text_lower:
+            plans_to_try = ["25k"]
+        else:
+            # Try both plans in parallel — covers any ambiguous tweet
+            plans_to_try = ["50k", "25k"]
 
-    # 3. PLAYWRIGHT: browser-based checkout if available (best-effort)
-    if PLAYWRIGHT_AVAILABLE:
+        logger.info(f"🎯 Plans to try: {plans_to_try}")
+
+        # 1. PRIMARY: Direct checkout API
+        checkout_tasks = []
+        for plan in plans_to_try:
+            checkout_tasks.append(asyncio.create_task(claimer.checkout_all_accounts(code, plan)))
+
+        # 2. BACKUP: Secret-code redemption API
+        redemption_task = asyncio.create_task(claimer.claim_all_accounts(code))
+
+        # 3. PLAYWRIGHT
+        if PLAYWRIGHT_AVAILABLE:
+            try:
+                from checkout_buyer import purchase_evaluation_account
+                asyncio.create_task(purchase_evaluation_account(code))
+            except Exception as e:
+                logger.debug(f"Playwright not available: {e}")
+
+        # Wait for all checkout tasks and see if any succeeded
+        code_succeeded = False
+        
+        # Check checkout successes
+        for task in checkout_tasks:
+            try:
+                checkout_results = await task
+                for res in (checkout_results or []):
+                    if isinstance(res, dict) and res.get("success"):
+                        successful_claims += 1
+                        code_succeeded = True
+                        logger.info(f"🎉 CHECKOUT SUCCESS ({successful_claims}/{MAX_CLAIMS}) — Plan: {res.get('plan', '?')}!")
+            except Exception as e:
+                logger.warning(f"Error checking checkout task result: {e}")
+
+        # Check redemption successes
         try:
-            from checkout_buyer import purchase_evaluation_account
-            asyncio.create_task(purchase_evaluation_account(code))
-        except Exception as e:
-            logger.debug(f"Playwright not available: {e}")
-
-    # Wait for redemption results and update counter
-    redemption_results = await redemption_task
-    for res in (redemption_results or []):
-        if isinstance(res, dict) and res.get("success"):
-            successful_claims += 1
-            logger.info(f"🎉 REDEMPTION CLAIM SUCCESS ({successful_claims}/{MAX_CLAIMS})!")
-
-    # Also track checkout successes
-    for task in checkout_tasks:
-        try:
-            checkout_results = await task
-            for res in (checkout_results or []):
+            redemption_results = await redemption_task
+            for res in (redemption_results or []):
                 if isinstance(res, dict) and res.get("success"):
                     successful_claims += 1
-                    logger.info(f"🎉 CHECKOUT SUCCESS ({successful_claims}/{MAX_CLAIMS}) — Plan: {res.get('plan', '?')}!")
-        except Exception:
-            pass
+                    code_succeeded = True
+                    logger.info(f"🎉 REDEMPTION CLAIM SUCCESS ({successful_claims}/{MAX_CLAIMS})!")
+        except Exception as e:
+            logger.warning(f"Error checking redemption task result: {e}")
+
+        # If a code succeeded (i.e. did not return 204 or error), we stop trying the rest of the list immediately!
+        if code_succeeded:
+            logger.info(f"✅ Code '{code}' was processed successfully. Skipping remaining candidate codes.")
+            break
+        else:
+            logger.warning(f"❌ Code '{code}' failed checkout. Waiting 1.5 seconds before trying next candidate...")
+            await asyncio.sleep(1.5)
 
     if successful_claims >= MAX_CLAIMS:
         logger.info("🏆 Target claims reached! Shutting down.")
