@@ -102,6 +102,7 @@ async def on_message(message):
                     break
 
                 claimed_codes.add(code)
+                logger.info(f"🚀 [Code {idx+1}/{len(selected_codes)}] Claiming: '{code}'")
                 results = await claimer.claim_all_accounts(code)
 
                 # Check if any claim succeeded
@@ -114,10 +115,10 @@ async def on_message(message):
                             await client.close()
                             return
 
-                # Wait 2 to 3 seconds before trying the next code (if any remain)
+                # Wait 3-4 seconds (random) before trying the next code
                 if idx < len(selected_codes) - 1 and successful_claims < MAX_CLAIMS:
-                    delay = random.uniform(2.0, 3.0)
-                    logger.info(f"⏳ Waiting {delay:.2f} seconds before attempting next code...")
+                    delay = random.uniform(3.0, 4.0)
+                    logger.info(f"⏳ Waiting {delay:.1f}s before next code...")
                     await asyncio.sleep(delay)
 
 
