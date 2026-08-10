@@ -35,6 +35,13 @@ from parser import extract_all_giveaway_codes
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("150kSnatcher")
 
+claimed_codes = set()
+claimer = MultiAccountClaimer(
+    config.REDEMPTION_API_URL,
+    config.ACCOUNT_TOKENS,
+    config.LUCID_ACCOUNTS
+)
+
 def native_mac_click(x: int, y: int):
     """Generates native macOS hardware mouse click at display point (x, y)."""
     try:
