@@ -68,7 +68,7 @@ class OcrSolver:
             return img_path
 
         b, g, r = cv2.split(img)
-        white_mask = (r > 160) & (g > 160) & (b > 160)
+        white_mask = (r > 140) & (g > 140) & (b > 140)
 
         # Create crisp binary image: white text on black background
         result = np.zeros_like(img)
