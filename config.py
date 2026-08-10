@@ -36,6 +36,9 @@ X_EMAIL = os.getenv("X_EMAIL", "").strip()
 X_TARGET_USER = os.getenv("X_TARGET_USER", "cj_wawa").strip()
 X_POLL_INTERVAL = float(os.getenv("X_POLL_INTERVAL", "12.0").strip())
 
+# Game Cracker Settings
+GUESS_DELAY = float(os.getenv("GUESS_DELAY", "3.1").strip())
+
 
 def validate_config():
     errors = []

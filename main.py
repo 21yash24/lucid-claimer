@@ -19,13 +19,6 @@ import config
 import random
 from parser import parse_discord_message_all
 from claimer import MultiAccountClaimer
-from x_monitor import XMonitor
-
-try:
-    import playwright
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("LucidBot")
@@ -53,26 +46,14 @@ async def claim_code_callback(code: str):
         return
         
     claimed_codes.add(code)
-    logger.info(f"⚡ [Dual Claim Mode] Spotted code: '{code}'. Triggering BOTH API Claim and Playwright Auto-Checkout concurrently...")
-    
-    # 1. Trigger Playwright Auto-Checkout as a background task if supported by platform
-    if PLAYWRIGHT_AVAILABLE:
-        try:
-            from checkout_buyer import purchase_evaluation_account
-            asyncio.create_task(purchase_evaluation_account(code))
-        except Exception as e:
-            logger.error(f"⚠️ Failed to spawn Playwright auto-checkout: {e}")
-    else:
-        logger.warning(f"⚠️ Playwright is not supported on this platform. Skipping auto-checkout buy flow for code: {code}")
-        
-    # 2. Trigger the fast direct API Claim
+    logger.info(f"⚡ Attempting to claim code: {code}")
     results = await claimer.claim_all_accounts(code)
     
     # Check if any claim succeeded
     for res in results:
         if isinstance(res, dict) and res.get("success"):
             successful_claims += 1
-            logger.info(f"🎉 SUCCESSFUL API CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
             if successful_claims >= MAX_CLAIMS:
                 logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
                 await client.close()
@@ -121,26 +102,13 @@ async def on_message(message):
                     break
 
                 claimed_codes.add(code)
-                logger.info(f"⚡ [Dual Claim Mode] Attempting code '{code}' on API and Playwright...")
-                
-                # 1. Trigger Playwright Auto-Checkout as a background task if supported by platform
-                if PLAYWRIGHT_AVAILABLE:
-                    try:
-                        from checkout_buyer import purchase_evaluation_account
-                        asyncio.create_task(purchase_evaluation_account(code))
-                    except Exception as e:
-                        logger.error(f"⚠️ Failed to spawn Playwright auto-checkout: {e}")
-                else:
-                    logger.warning(f"⚠️ Playwright is not supported on this platform. Skipping auto-checkout buy flow for code: {code}")
-                
-                # 2. Trigger the direct API Claim
                 results = await claimer.claim_all_accounts(code)
 
                 # Check if any claim succeeded
                 for res in results:
                     if isinstance(res, dict) and res.get("success"):
                         successful_claims += 1
-                        logger.info(f"🎉 SUCCESSFUL API CLAIM ({successful_claims}/{MAX_CLAIMS})!")
+                        logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
                         if successful_claims >= MAX_CLAIMS:
                             logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
                             await client.close()
@@ -163,6 +131,8 @@ async def main():
 
     # Initialize persistent HTTP session pool
     await claimer.initialize()
+
+    # X Monitor startup removed per user instruction to focus solely on Discord drops
 
     try:
         logger.info("Starting Discord gateway listener...")
