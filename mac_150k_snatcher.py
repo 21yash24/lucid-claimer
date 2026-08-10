@@ -57,7 +57,17 @@ def find_and_click_green_button():
         if img is None:
             return False
 
-        # Detect the bright green button (PROCEED TO PAYMENT is a vivid green)
+        img_h, img_w = img.shape[:2]
+
+        applescript_screen = 'tell application "Finder" to get bounds of window of desktop'
+        res = subprocess.run(['osascript', '-e', applescript_screen], capture_output=True, text=True)
+        parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1440, 900]
+        disp_w = parts[2] - parts[0]
+        disp_h = parts[3] - parts[1]
+
+        scale_x = img_w / float(disp_w)
+        scale_y = img_h / float(disp_h)
+
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 100, 100])
         upper_green = np.array([80, 255, 255])
@@ -68,14 +78,12 @@ def find_and_click_green_button():
             logger.warning("⚠️ Green button not found on screen!")
             return False
 
-        # Filter: PROCEED TO PAYMENT is a WIDE button (full modal width ~400px+)
-        # Small green nav buttons (like "Add") must be ignored
+        # Filter: PROCEED TO PAYMENT is a WIDE button (full modal width ~300px+ in display points)
         wide_contours = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             area = cv2.contourArea(c)
-            # Must be wide (>300px), wider than tall, and large area
-            if w > 300 and w > h * 3 and area > 5000:
+            if (w / scale_x) > 250 and w > h * 2 and area > 3000 * (scale_x * scale_y):
                 wide_contours.append(c)
 
         if not wide_contours:
@@ -84,12 +92,14 @@ def find_and_click_green_button():
 
         largest = max(wide_contours, key=cv2.contourArea)
         M = cv2.moments(largest)
-        cx = int(M["m10"] / M["m00"])
-        cy = int(M["m01"] / M["m00"])
+        cx_px = int(M["m10"] / M["m00"])
+        cy_px = int(M["m01"] / M["m00"])
 
-        logger.info(f"🎯 Found green PROCEED TO PAYMENT button at screen coords ({cx}, {cy})")
+        cx = int(cx_px / scale_x)
+        cy = int(cy_px / scale_y)
 
-        # Click that exact position using osascript
+        logger.info(f"🎯 Found green PROCEED TO PAYMENT button at display coords ({cx}, {cy})")
+
         applescript_click = f'''
         tell application "System Events"
             click at {{{cx}, {cy}}}
@@ -106,7 +116,7 @@ def find_and_click_green_button():
 def find_and_click_coupon_field_and_button():
     """
     Finds the 'Apply Coupon Code' input area or green 'Apply Coupon' button at top of modal,
-    clicks the input box to focus it, and returns True.
+    clicks the input box to focus it, and returns True. Automatically accounts for Retina display scaling.
     """
     try:
         import cv2
@@ -117,7 +127,21 @@ def find_and_click_coupon_field_and_button():
 
         img = cv2.imread(shot_path)
         if img is None:
-            return False
+            return None
+
+        img_h, img_w = img.shape[:2]
+
+        # Get main display logical bounds via AppleScript
+        applescript_screen = 'tell application "Finder" to get bounds of window of desktop'
+        res = subprocess.run(['osascript', '-e', applescript_screen], capture_output=True, text=True)
+        # Output format: "0, 0, 1470, 956"
+        parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1440, 900]
+        disp_w = parts[2] - parts[0]
+        disp_h = parts[3] - parts[1]
+
+        # Scale factor (e.g. 2.0 for Retina display)
+        scale_x = img_w / float(disp_w)
+        scale_y = img_h / float(disp_h)
 
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         lower_green = np.array([40, 100, 100])
@@ -126,34 +150,39 @@ def find_and_click_coupon_field_and_button():
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return False
+            return None
 
-        # Find all green buttons
+        # Find all green buttons in image pixels
         green_buttons = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             area = cv2.contourArea(c)
-            if area > 1000 and w > h:
+            if area > 500 * (scale_x * scale_y) and w > h:
                 green_buttons.append((x, y, w, h, c))
 
         if not green_buttons:
-            return False
+            return None
 
         # Sort by y-coordinate ascending (topmost green button in modal is "Apply Coupon")
         green_buttons.sort(key=lambda b: b[1])
 
-        # If top green button is short/medium (Apply Coupon button), click to its left (the input field)
         top_btn = green_buttons[0]
-        x, y, w, h, _ = top_btn
+        bx_px, by_px, bw_px, bh_px, _ = top_btn
 
-        # Target input box is ~150px to the left of the green Apply Coupon button
-        input_x = max(10, x - 150)
-        input_y = y + h // 2
+        # Input field center in image pixels (~150px to left of button in image pixels)
+        ix_px = max(10, bx_px - int(150 * scale_x))
+        iy_px = by_px + bh_px // 2
 
-        btn_x = x + w // 2
-        btn_y = y + h // 2
+        btn_center_x_px = bx_px + bw_px // 2
+        btn_center_y_px = by_px + bh_px // 2
 
-        logger.info(f"🎯 Target input field found at ({input_x}, {input_y}), Apply Coupon btn at ({btn_x}, {btn_y})")
+        # Convert Retina image pixels -> display points
+        input_x = int(ix_px / scale_x)
+        input_y = int(iy_px / scale_y)
+        btn_x = int(btn_center_x_px / scale_x)
+        btn_y = int(btn_center_y_px / scale_y)
+
+        logger.info(f"🎯 Display points -> Input field: ({input_x}, {input_y}), Apply Coupon button: ({btn_x}, {btn_y}) [Scale: {scale_x:.2f}]")
         return (input_x, input_y, btn_x, btn_y)
 
     except Exception as e:
