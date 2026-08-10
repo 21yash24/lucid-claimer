@@ -108,5 +108,33 @@ def parse_discord_message_all(message_content: str, embeds: List[dict]) -> List[
                 if code not in found_codes:
                     found_codes.append(code)
 
-    return found_codes
+def generate_code_variations(code: str) -> List[str]:
+    """
+    Generates smart OCR error variations for ambiguous characters.
+    Handles common scribbled OCR confusions:
+      - E <-> F
+      - TT <-> Y7 / T <-> 7 / T <-> Y
+      - S <-> 5
+      - O <-> 0
+    Returns a list of unique code candidates starting with the original.
+    """
+    variations = [code]
+    c_upper = code.upper()
+
+    # Common replacement pairs
+    replacements = [
+        ('E', 'F'),
+        ('TT', 'Y7'),
+        ('QTT', 'QY7'),
+        ('S', '5'),
+        ('O', '0'),
+    ]
+
+    for old, new in replacements:
+        if old in c_upper:
+            alt = c_upper.replace(old, new)
+            if alt not in variations:
+                variations.append(alt)
+
+    return variations
 

@@ -51,14 +51,14 @@ class OcrSolver:
             logger.warning("⚠️ No OCR library found!")
 
     # ──────────────────────────────────────────────────────
-    # STEP 1: White-Only Text Extraction Filter
+    # STEP 1: Advanced Color Separation & White Text Recovery Filter
     # ──────────────────────────────────────────────────────
     def extract_white_text_image(self, img_path: str, output_path: str) -> str:
         """
-        Extracts only bright white text pixels (R>160, G>160, B>160).
-        Since coupon codes on card drops are bold bright white text, this filter
-        completely strips out red/colored scribbles and dark background graphics,
-        leaving crisp, unbroken black text on a clean white canvas for OCR.
+        Differentiates pure red scribbles from bright white text pixels (even where red crossed).
+        - Pure red scribble: R is high, G & B are dark.
+        - Text pixel: High combined luminance (R+G+B > 320) and not pure red scribble.
+        Strips out red scribbles completely, preserving character tails like Y, 7, F, 5.
         """
         if not CV2_AVAILABLE:
             return img_path
@@ -67,15 +67,21 @@ class OcrSolver:
         if img is None:
             return img_path
 
-        b, g, r = cv2.split(img)
-        white_mask = (r > 140) & (g > 140) & (b > 140)
+        b, g, r = [c.astype(np.int16) for c in cv2.split(img)]
 
-        # Create crisp binary image: white text on black background
+        # Pure red scribble mask (red is dominant, green/blue dark)
+        red_scribble_mask = (r - g > 35) & (r - b > 35) & (g < 110) & (b < 110)
+
+        # High-luminance text mask
+        text_mask = ((r + g + b) > 300) & (~red_scribble_mask)
+
         result = np.zeros_like(img)
-        result[white_mask] = [255, 255, 255]
+        result[text_mask] = [255, 255, 255]
 
-        # Invert to black text on white background (optimal for Vision framework)
-        inverted = cv2.bitwise_not(result)
+        # 2x upscale with cubic interpolation for clean character contours
+        scaled = cv2.resize(result, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+
+        inverted = cv2.bitwise_not(scaled)
         cv2.imwrite(output_path, inverted)
         return output_path
 
@@ -98,20 +104,17 @@ class OcrSolver:
         return ""
 
     # ──────────────────────────────────────────────────────
-    # STEP 3: Reconstruct code from OCR passes
+    # STEP 3: Reconstruct code candidate from OCR output
     # ──────────────────────────────────────────────────────
     def _reconstruct_code_from_fragments(self, raw_ocr: str) -> str | None:
-        """
-        Collects code tokens from top of OCR lines before UI noise (Lucid/100%/Copy/Eval).
-        """
         lines = [l.strip() for l in raw_ocr.splitlines() if l.strip()]
 
         code_fragments = []
         for line in lines:
             upper = line.upper()
             if any(noise in upper for noise in [
-                "LUCID", "EVAL", "100%", "COPY", "OFF", "50K", "150K",
-                "LUCIDPRO", "PROCENT", "COUPON", "CART", "CHECKOUT",
+                "LUCID", "EVAL", "100%", "COPY", "OFF", "50K", "150K", "25K",
+                "LUCIDPRO", "LUCIDFLEX", "PROCENT", "COUPON", "CART", "CHECKOUT",
                 "PRO EVAL", "% OFF"
             ]):
                 break
@@ -128,12 +131,6 @@ class OcrSolver:
     # Public: extract_text_from_image
     # ──────────────────────────────────────────────────────
     def extract_text_from_image(self, img_path: str, preprocessed_path: str = None) -> str:
-        """
-        Full OCR Pipeline:
-          1. Apply White-Only Text Filter (strips all red scribbles instantly).
-          2. Run Apple Vision OCR on white-only filter image.
-          3. Also run raw pass as backup.
-        """
         clean_path = preprocessed_path or img_path.replace(".jpg", "_whiteonly.jpg")
         cleaned_img = self.extract_white_text_image(img_path, clean_path)
 
@@ -141,7 +138,7 @@ class OcrSolver:
         raw_text   = self._run_vision_ocr(img_path)
 
         if white_text:
-            logger.info(f"🍏 [Vision OCR White-Filter] → {white_text!r}")
+            logger.info(f"🍏 [Vision OCR Color-Sep] → {white_text!r}")
         if raw_text:
             logger.info(f"🍏 [Vision OCR Raw] → {raw_text!r}")
 
@@ -159,10 +156,6 @@ class OcrSolver:
     # Public: find_lucid_codes
     # ──────────────────────────────────────────────────────
     def find_lucid_codes(self, text: str) -> list:
-        """
-        Extracts valid coupon code from OCR output.
-        Prioritizes the White-Filter OCR pass first.
-        """
         if text:
             first_block = text.split("---")[0] if "---" in text else text
             reconstructed = self._reconstruct_code_from_fragments(first_block)
