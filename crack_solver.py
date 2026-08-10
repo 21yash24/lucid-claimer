@@ -143,11 +143,19 @@ class MastermindSolver:
 
     async def _probe_endpoints(self, session: aiohttp.ClientSession):
         """
-        One-time startup probe: fires a test guess to each GUESS_ENDPOINT and a GET
-        to each STATUS_ENDPOINT. Picks the first one that returns non-204 / non-404
-        real data. Logs results for full visibility.
+        One-time startup probe.
+        - Always refreshes token first so probes use valid auth.
+        - Only marks an endpoint as 'valid' if it returns non-401 / non-404 / non-405.
+        - Status: /api/events/active is CONFIRMED real, so status probe is skipped.
         """
-        logger.info("🔍 [EndpointProbe] Auto-discovering working giveaway endpoints...")
+        # ── Always refresh token FIRST so all probes use valid auth ────────
+        if not self.token:
+            await self.refresh_token(session)
+        else:
+            # Re-validate: try a lightweight login to ensure token is fresh
+            await self.refresh_token(session)
+
+        logger.info("🔍 [EndpointProbe] Probing guess endpoints with fresh token...")
         test_payload = {"code": "AAAAA", "guess": "AAAAA"}
 
         # ── probe guess endpoints ─────────────────────────────────────────
@@ -157,9 +165,11 @@ class MastermindSolver:
                 async with session.post(url, json=test_payload, headers=self.headers,
                                         timeout=aiohttp.ClientTimeout(total=4)) as resp:
                     text = await resp.text()
-                    logger.info(f"  [GUESS] POST {url}  →  HTTP {resp.status}  body={text[:120]!r}")
-                    # Any real response (not 404) is a live endpoint
-                    if resp.status not in (404, 405) and best_guess is None:
+                    logger.info(f"  [GUESS] {resp.status} {url}  body={text[:80]!r}")
+                    # 401 = unauthorized (bad token or endpoint requires special app session)
+                    # 404/405 = endpoint doesn't exist
+                    # Anything else (200, 204, 400, 422, 429) = endpoint IS real
+                    if resp.status not in (401, 403, 404, 405) and best_guess is None:
                         best_guess = url
             except Exception as e:
                 logger.debug(f"  [GUESS] {url}: {e}")
@@ -167,53 +177,75 @@ class MastermindSolver:
         if best_guess:
             self.guess_url = best_guess
             self.api_url   = best_guess
-            logger.info(f"✅ [EndpointProbe] Using guess endpoint: {best_guess}")
+            logger.info(f"✅ [EndpointProbe] Confirmed guess endpoint: {best_guess}")
         else:
-            logger.warning("⚠️ [EndpointProbe] No live guess endpoint found — keeping default.")
+            # All returned 401 — they exist but need fresh app session.
+            # Keep default; submit_guess will retry with token refresh when event fires.
+            logger.warning("⚠️ [EndpointProbe] All guess endpoints returned 401 (no live event). Will retry with fresh token when event fires.")
 
-        # ── probe status endpoints ────────────────────────────────────────
-        best_status = None
-        for url in STATUS_ENDPOINTS:
-            try:
-                async with session.get(url, headers=self.headers,
-                                       timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                    text = await resp.text()
-                    logger.info(f"  [STATUS] GET {url}  →  HTTP {resp.status}  body={text[:120]!r}")
-                    if resp.status not in (404, 405) and best_status is None:
-                        best_status = url
-            except Exception as e:
-                logger.debug(f"  [STATUS] {url}: {e}")
-
-        if best_status:
-            self.status_url = best_status
-            logger.info(f"✅ [EndpointProbe] Using status endpoint: {best_status}")
-        else:
-            logger.warning("⚠️ [EndpointProbe] No live status endpoint found — keeping default.")
-
+        # Status endpoint is CONFIRMED: /api/events/active → {"status":"closed/active"}
+        self.status_url = "https://dash.lucidtrading.com/api/events/active"
+        logger.info(f"✅ [EndpointProbe] Status endpoint confirmed: {self.status_url}")
         self._endpoints_probed = True
 
 
     async def submit_guess(self, session: aiohttp.ClientSession, guess_code: str) -> dict:
         """
-        Submits a 5-digit guess to Lucid's rewards endpoint.
-        Returns full parsed response dict, or {} on failure.
+        Submits a 5-digit guess. On 401, auto-refreshes token and retries.
+        If the stored guess_url fails, tries every other endpoint as fallback.
         """
         payload = {"code": guess_code, "guess": guess_code}
-        start_time = time.perf_counter()
 
-        try:
-            async with session.post(self.guess_url, json=payload, headers=self.headers,
-                                    timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                elapsed_ms = (time.perf_counter() - start_time) * 1000
-                text = await resp.text()
-                logger.info(f"🎯 Guess '{guess_code}' → HTTP {resp.status} ({elapsed_ms:.1f}ms): {text[:200]!r}")
-                try:
-                    return await resp.json(content_type=None) if text.strip() else {}
-                except Exception:
-                    return {"_raw": text, "_status": resp.status}
-        except Exception as e:
-            logger.error(f"⚠️ Error submitting guess '{guess_code}': {e}")
-            return {}
+        # Build attempt order: stored best first, then all others as fallback
+        urls_to_try = [self.guess_url] + [u for u in GUESS_ENDPOINTS if u != self.guess_url]
+
+        for url in urls_to_try:
+            start_time = time.perf_counter()
+            try:
+                async with session.post(url, json=payload, headers=self.headers,
+                                        timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    elapsed_ms = (time.perf_counter() - start_time) * 1000
+                    text = await resp.text()
+
+                    # ── 401: token expired → refresh once and retry this URL ──
+                    if resp.status in (401, 403):
+                        logger.warning(f"🔐 [{url}] 401 on guess — refreshing token and retrying...")
+                        refreshed = await self.refresh_token(session)
+                        if refreshed:
+                            async with session.post(url, json=payload, headers=self.headers,
+                                                    timeout=aiohttp.ClientTimeout(total=5)) as r2:
+                                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                                text = await r2.text()
+                                resp = r2
+                                logger.info(f"🔁 Retry after refresh: HTTP {resp.status} ({elapsed_ms:.1f}ms): {text[:150]!r}")
+                                if resp.status in (401, 403):
+                                    # This URL won't work, try next one
+                                    continue
+                        else:
+                            continue
+
+                    # ── 404/405: endpoint doesn't exist, try next ────────────
+                    if resp.status in (404, 405):
+                        continue
+
+                    # ── Got a real response ──────────────────────────────────
+                    logger.info(f"🎯 Guess '{guess_code}' → HTTP {resp.status} ({elapsed_ms:.1f}ms): {text[:200]!r}")
+                    # Lock in this working URL for future guesses
+                    if url != self.guess_url:
+                        logger.info(f"🔀 Switching to working guess endpoint: {url}")
+                        self.guess_url = url
+                        self.api_url   = url
+                    try:
+                        return await resp.json(content_type=None) if text.strip() else {}
+                    except Exception:
+                        return {"_raw": text, "_status": resp.status}
+
+            except Exception as e:
+                logger.error(f"⚠️ Exception on guess '{guess_code}' [{url}]: {e}")
+                continue
+
+        logger.error(f"💀 All guess endpoints failed for '{guess_code}'. No valid response.")
+        return {}
 
     def find_candidate_backtrack(self, history: List[Tuple[str, int, int]]) -> Optional[str]:
         # Pre-process history for rapid lookup
