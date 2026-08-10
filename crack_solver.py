@@ -309,19 +309,32 @@ class MastermindSolver:
                     return None
 
                 # ── Parse feedback ────────────────────────────────────────
-                correct_spot = (
-                    resp_data.get("correctSpot") or resp_data.get("correct_spot")
-                    or resp_data.get("correct") or resp_data.get("exactMatches")
-                )
-                wrong_spot = (
-                    resp_data.get("wrongSpot") or resp_data.get("wrong_spot")
-                    or resp_data.get("wrong") or resp_data.get("partialMatches")
-                )
+                correct_spot = None
+                for key in ["correctSpot", "correct_spot", "correct", "exactMatches"]:
+                    val = resp_data.get(key)
+                    if val is not None:
+                        correct_spot = val
+                        break
+                        
+                wrong_spot = None
+                for key in ["wrongSpot", "wrong_spot", "wrong", "partialMatches"]:
+                    val = resp_data.get(key)
+                    if val is not None:
+                        wrong_spot = val
+                        break
 
                 if correct_spot is None and isinstance(resp_data.get("data"), dict):
                     d = resp_data["data"]
-                    correct_spot = d.get("correctSpot") or d.get("correct_spot") or d.get("correct")
-                    wrong_spot   = d.get("wrongSpot")   or d.get("wrong_spot")   or d.get("wrong")
+                    for key in ["correctSpot", "correct_spot", "correct"]:
+                        val = d.get(key)
+                        if val is not None:
+                            correct_spot = val
+                            break
+                    for key in ["wrongSpot", "wrong_spot", "wrong"]:
+                        val = d.get(key)
+                        if val is not None:
+                            wrong_spot = val
+                            break
 
                 if correct_spot is None or wrong_spot is None:
                     logger.warning(f"❓ No feedback fields in response: {resp_data} — cannot update constraints, trying fresh random guess")
