@@ -92,6 +92,49 @@ class OcrSolver:
             
         return gray_resized
 
+    def _preprocess_pil(self, img_path: str, scale: float):
+        from PIL import ImageOps, ImageChops
+        img = Image.open(img_path).convert("RGB")
+        width, height = img.size
+        pixels = img.load()
+        
+        # 1. Clear red pixels (be careful not to clean white text)
+        for y in range(height):
+            for x in range(width):
+                r, g, b = pixels[x, y]
+                # Red is high, Green and Blue are low, and red is clearly dominant
+                if r > 55 and g < 75 and b < 75 and (r - g) > 25 and (r - b) > 25:
+                    pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
+                    
+        # 2. Convert to grayscale
+        gray = img.convert("L")
+        
+        # 3. Apply thresholding (make text white, background black)
+        thresh = gray.point(lambda p: 255 if p > 100 else 0)
+        
+        # 4. Invert (Tesseract prefers black text on white background)
+        inverted = ImageOps.invert(thresh)
+        
+        # 4b. Vertical & Horizontal dilation to bridge gaps (1x3 vertical, 1x2 horizontal min-filter)
+        shifted_up = ImageChops.offset(inverted, 0, -1)
+        shifted_down = ImageChops.offset(inverted, 0, 1)
+        shifted_left = ImageChops.offset(inverted, -1, 0)
+        shifted_right = ImageChops.offset(inverted, 1, 0)
+        
+        temp = ImageChops.darker(inverted, shifted_up)
+        temp = ImageChops.darker(temp, shifted_down)
+        temp = ImageChops.darker(temp, shifted_left)
+        eroded = ImageChops.darker(temp, shifted_right)
+        
+        # 5. Resize using BICUBIC for clean anti-aliased larger text
+        try:
+            resample_mode = Image.Resampling.BICUBIC
+        except AttributeError:
+            resample_mode = Image.BICUBIC
+            
+        resized = eroded.resize((int(width * scale), int(height * scale)), resample_mode)
+        return resized
+
     def extract_text_from_image(self, img_path: str, preprocessed_path: str = None) -> str:
         """
         Removes red scribbles (if opencv is available), performs OCR on the image, and returns all extracted text.
@@ -114,67 +157,41 @@ class OcrSolver:
                     extracted_text = ""
             else:
                 logger.warning("⚠️ OpenCV (cv2) not available. Falling back to PIL-based red scribble removal...")
-                target_path = img_path
+                
+                # Try OCR at different scaling factors to capture both large and small coupon text perfectly!
+                text_runs = []
+                
+                # Save the 3.0x preprocessed debug image to the debug path
+                processed_3x = self._preprocess_pil(img_path, 3.0)
                 if preprocessed_path:
                     try:
-                        from PIL import ImageOps
-                        img = Image.open(img_path).convert("RGB")
-                        pixels = img.load()
-                        width, height = img.size
-                        
-                        # 1. Clear red pixels (be careful not to clean white text)
-                        for y in range(height):
-                            for x in range(width):
-                                r, g, b = pixels[x, y]
-                                # Red is high, Green and Blue are low, and red is clearly dominant
-                                if r > 55 and g < 75 and b < 75 and (r - g) > 25 and (r - b) > 25:
-                                    pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
-                                    
-                        # 2. Convert to grayscale
-                        gray = img.convert("L")
-                        
-                        # 3. Apply thresholding (make text white, background black)
-                        thresh = gray.point(lambda p: 255 if p > 100 else 0)
-                        
-                        # 4. Invert (Tesseract prefers black text on white background)
-                        inverted = ImageOps.invert(thresh)
-                        
-                        # 4b. Vertical & Horizontal dilation to bridge gaps (1x3 vertical, 1x2 horizontal min-filter)
-                        from PIL import ImageChops
-                        shifted_up = ImageChops.offset(inverted, 0, -1)
-                        shifted_down = ImageChops.offset(inverted, 0, 1)
-                        shifted_left = ImageChops.offset(inverted, -1, 0)
-                        shifted_right = ImageChops.offset(inverted, 1, 0)
-                        
-                        temp = ImageChops.darker(inverted, shifted_up)
-                        temp = ImageChops.darker(temp, shifted_down)
-                        temp = ImageChops.darker(temp, shifted_left)
-                        eroded = ImageChops.darker(temp, shifted_right)
-                        
-                        # 5. Resize by 3.0x using BICUBIC for clean anti-aliased larger text
-                        try:
-                            resample_mode = Image.Resampling.BICUBIC
-                        except AttributeError:
-                            resample_mode = Image.BICUBIC
-                            
-                        resized = eroded.resize((int(width * 3), int(height * 3)), resample_mode)
-                        resized.save(preprocessed_path)
-                        target_path = preprocessed_path
-                        logger.info(f"🎨 PIL preprocessed image saved to: {preprocessed_path}")
-                    except Exception as pe:
-                        logger.error(f"⚠️ PIL preprocessing failed: {pe}. Using raw image.")
-                        
-                if PYTESSERACT_AVAILABLE:
-                    pil_img = Image.open(target_path)
-                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                    extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
-                elif EASYOCR_AVAILABLE and self.reader:
-                    # EasyOCR can also read direct file paths
-                    results = self.reader.readtext(target_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                    extracted_text = " ".join(results)
-                else:
-                    logger.error("❌ No OCR library (easyocr or pytesseract) available for raw extraction!")
-                    extracted_text = ""
+                        processed_3x.save(preprocessed_path)
+                    except Exception:
+                        pass
+                
+                # Run OCR on scales 1.0x (best for large text) and 3.0x (best for small text)
+                for scale in [1.0, 3.0]:
+                    try:
+                        processed_img = self._preprocess_pil(img_path, scale)
+                        if PYTESSERACT_AVAILABLE:
+                            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                            run_text = pytesseract.image_to_string(processed_img, config=custom_config).strip()
+                            text_runs.append(run_text)
+                        elif EASYOCR_AVAILABLE and self.reader:
+                            # Save temporary file for easyocr
+                            temp_path = f"tmp_images/temp_scale_{scale}.jpg"
+                            processed_img.save(temp_path)
+                            results = self.reader.readtext(temp_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                            text_runs.append(" ".join(results))
+                            try:
+                                os.remove(temp_path)
+                            except Exception:
+                                pass
+                    except Exception as run_error:
+                        logger.error(f"⚠️ Scale {scale}x run failed: {run_error}")
+                
+                # Combine the text from all scale runs
+                extracted_text = "\n".join([t for t in text_runs if t])
                 
             logger.info(f"Raw OCR Output: {extracted_text}")
             return extracted_text
