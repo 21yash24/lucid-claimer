@@ -104,13 +104,13 @@ class XMonitor:
                 text = self.ocr_solver.extract_text_from_image(img_path, preprocessed_path)
                 codes = self.ocr_solver.find_lucid_codes(text)
                 
-                # Cleanup downloaded temp files
-                try:
-                    os.remove(img_path)
-                    if os.path.exists(preprocessed_path):
-                        os.remove(preprocessed_path)
-                except Exception:
-                    pass
+                # Cleanup downloaded temp files (Disabled to allow debugging and test_psm.py verification)
+                # try:
+                #     os.remove(img_path)
+                #     if os.path.exists(preprocessed_path):
+                #         os.remove(preprocessed_path)
+                # except Exception:
+                #     pass
                     
                 if codes:
                     logger.info(f"🎯 OCR found code(s) in image: {codes}")
