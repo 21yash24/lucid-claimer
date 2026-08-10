@@ -85,8 +85,19 @@ class XMonitor:
             if not media_url or media_type != "photo":
                 continue
                 
-            logger.info(f"📸 Image attachment detected: {media_url}. Downloading...")
-            img_path = await self.download_image(session, media_url)
+            # If it's a Twikit media object, use its native downloader which fetches binary data using credentials
+            if not isinstance(media, dict) and hasattr(media, "download"):
+                filename = f"tweet_{int(time.time())}.jpg"
+                img_path = os.path.join(self.tmp_img_dir, filename)
+                logger.info(f"📸 Image attachment detected: {media_url}. Downloading natively via Twikit...")
+                try:
+                    await media.download(img_path)
+                except Exception as e:
+                    logger.error(f"⚠️ Error using native twikit media download: {e}")
+                    img_path = ""
+            else:
+                logger.info(f"📸 Image attachment detected: {media_url}. Downloading via session fallback...")
+                img_path = await self.download_image(session, media_url)
             if img_path:
                 logger.info(f"👁️ Running OCR solver on: {img_path}...")
                 preprocessed_path = img_path.replace(".jpg", "_clean.jpg")

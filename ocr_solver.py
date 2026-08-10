@@ -137,8 +137,11 @@ class OcrSolver:
         Uses regex to search for possible Lucid Trading claim codes (alphanumeric, 6-12 chars, usually caps).
         Typically matches words that have both letters and numbers, excluding standard words.
         """
+        # Remove URLs (like http://... or https://... or t.co/...) to prevent matching letters inside links
+        clean_text = re.sub(r'https?://\S+|t\.co/\S+', '', text, flags=re.IGNORECASE)
+        
         # Look for uppercase alphanumeric strings of length 6 to 12
-        potential_codes = re.findall(r'\b[A-Z0-9]{6,12}\b', text.upper())
+        potential_codes = re.findall(r'\b[A-Z0-9]{6,12}\b', clean_text.upper())
         
         valid_codes = []
         for code in potential_codes:
