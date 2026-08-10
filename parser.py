@@ -2,9 +2,11 @@ import re
 from typing import List, Optional
 
 # Regular expressions for common giveaway drop patterns
-# Strictly match ONLY codes starting with LBOX (e.g. LBOX1234, LBOX-VIP-2026, LBOX_9921)
+# Match LBOX codes, CJ/WAWA/LUCID/FLEX codes, or general uppercase alphanumeric coupon codes (3-30 chars)
 CODE_PATTERNS = [
     re.compile(r'\bLBOX[A-Z0-9_-]{2,30}\b', re.IGNORECASE),
+    re.compile(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Z0-9_-]{1,25}\b', re.IGNORECASE),
+    re.compile(r'\b[A-Z0-9]{4,25}\b'),
 ]
 
 

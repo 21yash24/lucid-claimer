@@ -161,13 +161,14 @@ class XMonitor:
                             
                         # Process from oldest to newest in the count sample
                         for tweet in reversed(tweets):
+                            if is_first_check:
+                                self.seen_tweets.add(tweet.id)
+                                continue
+
                             if tweet.id in self.seen_tweets:
                                 continue
-                                
+
                             self.seen_tweets.add(tweet.id)
-                            
-                            if is_first_check:
-                                continue
                                 
                             # Print large warning alert
                             print("\a\a\a")
