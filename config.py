@@ -34,7 +34,7 @@ X_USERNAME = os.getenv("X_USERNAME", "").strip()
 X_PASSWORD = os.getenv("X_PASSWORD", "").strip()
 X_EMAIL = os.getenv("X_EMAIL", "").strip()
 X_TARGET_USER = os.getenv("X_TARGET_USER", "cj_wawa").strip()
-X_POLL_INTERVAL = float(os.getenv("X_POLL_INTERVAL", "8.0").strip())
+X_POLL_INTERVAL = float(os.getenv("X_POLL_INTERVAL", "12.0").strip())
 
 
 def validate_config():
