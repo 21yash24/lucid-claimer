@@ -48,25 +48,50 @@ def filter_candidates(candidates: List[str], guess: str, correct_spot: int, wron
             filtered.append(cand)
     return filtered
 
-# Candidate API endpoints for Lucid Mobile App Giveaway feature
-MOBILE_ENDPOINTS = [
+# ── Candidate endpoints ──────────────────────────────────────────────────────
+# Status-check endpoints (GET) - CONFIRMED REAL: /api/events/active → {"status":"closed"/"active"}
+STATUS_ENDPOINTS = [
+    "https://dash.lucidtrading.com/api/events/active",    # ✅ CONFIRMED REAL
+    "https://dash.lucidtrading.com/api/rewards/status",
+    "https://dash.lucidtrading.com/api/giveaway/status",
+    "https://dash.lucidtrading.com/api/rewards",
+    "https://dash.lucidtrading.com/api/rewards/event",
+    "https://dash.lucidtrading.com/api/giveaway",
+    "https://dash.lucidtrading.com/api/giveaway/event",
+    "https://dash.lucidtrading.com/api/mobile/giveaway/status",
+    "https://dash.lucidtrading.com/api/mobile/v1/giveaway/status",
+    "https://dash.lucidtrading.com/api/game/status",
+    "https://dash.lucidtrading.com/api/mastermind/status",
+]
+
+# Guess submission endpoints (POST)
+GUESS_ENDPOINTS = [
     "https://dash.lucidtrading.com/api/rewards/guess",
     "https://dash.lucidtrading.com/api/giveaway/guess",
     "https://dash.lucidtrading.com/api/rewards/crack-code",
+    "https://dash.lucidtrading.com/api/mobile/giveaway/guess",
     "https://dash.lucidtrading.com/api/mobile/v1/giveaway/guess",
-    "https://api.lucidtrading.com/v1/giveaway/guess"
+    "https://dash.lucidtrading.com/api/game/guess",
+    "https://dash.lucidtrading.com/api/mastermind/guess",
 ]
+
+# Legacy alias kept for compatibility
+MOBILE_ENDPOINTS = GUESS_ENDPOINTS
 
 class MastermindSolver:
     """
     Automated Mastermind Code Cracker for Lucid Trading 5-digit giveaway events.
+    Auto-discovers working status + guess endpoints on first use.
     """
     def __init__(self, token: str, cookie: str, email: str = None, password: str = None, endpoint_url: str = None):
         self.token = token if (token and token.startswith("Bearer ")) else f"Bearer {token}" if token else None
         self.cookie = cookie
         self.email = email
         self.password = password
-        self.api_url = endpoint_url or MOBILE_ENDPOINTS[0]
+        # Will be auto-discovered; fallback to first candidate
+        self.guess_url   = endpoint_url or GUESS_ENDPOINTS[0]
+        self.status_url  = STATUS_ENDPOINTS[0]
+        self.api_url     = self.guess_url  # legacy alias
         self.headers = {
             "Authorization": self.token or "",
             "Content-Type": "application/json",
@@ -75,7 +100,8 @@ class MastermindSolver:
             "Referer": "https://dash.lucidtrading.com/",
             "Cookie": self.cookie or ""
         }
-        self.auth_error_logged = False
+        self.auth_error_logged   = False
+        self._endpoints_probed   = False  # flag: auto-discovery done?
 
 
     async def refresh_token(self, session: aiohttp.ClientSession) -> bool:
@@ -115,19 +141,76 @@ class MastermindSolver:
         return False
 
 
+    async def _probe_endpoints(self, session: aiohttp.ClientSession):
+        """
+        One-time startup probe: fires a test guess to each GUESS_ENDPOINT and a GET
+        to each STATUS_ENDPOINT. Picks the first one that returns non-204 / non-404
+        real data. Logs results for full visibility.
+        """
+        logger.info("🔍 [EndpointProbe] Auto-discovering working giveaway endpoints...")
+        test_payload = {"code": "AAAAA", "guess": "AAAAA"}
+
+        # ── probe guess endpoints ─────────────────────────────────────────
+        best_guess = None
+        for url in GUESS_ENDPOINTS:
+            try:
+                async with session.post(url, json=test_payload, headers=self.headers,
+                                        timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                    text = await resp.text()
+                    logger.info(f"  [GUESS] POST {url}  →  HTTP {resp.status}  body={text[:120]!r}")
+                    # Any real response (not 404) is a live endpoint
+                    if resp.status not in (404, 405) and best_guess is None:
+                        best_guess = url
+            except Exception as e:
+                logger.debug(f"  [GUESS] {url}: {e}")
+
+        if best_guess:
+            self.guess_url = best_guess
+            self.api_url   = best_guess
+            logger.info(f"✅ [EndpointProbe] Using guess endpoint: {best_guess}")
+        else:
+            logger.warning("⚠️ [EndpointProbe] No live guess endpoint found — keeping default.")
+
+        # ── probe status endpoints ────────────────────────────────────────
+        best_status = None
+        for url in STATUS_ENDPOINTS:
+            try:
+                async with session.get(url, headers=self.headers,
+                                       timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                    text = await resp.text()
+                    logger.info(f"  [STATUS] GET {url}  →  HTTP {resp.status}  body={text[:120]!r}")
+                    if resp.status not in (404, 405) and best_status is None:
+                        best_status = url
+            except Exception as e:
+                logger.debug(f"  [STATUS] {url}: {e}")
+
+        if best_status:
+            self.status_url = best_status
+            logger.info(f"✅ [EndpointProbe] Using status endpoint: {best_status}")
+        else:
+            logger.warning("⚠️ [EndpointProbe] No live status endpoint found — keeping default.")
+
+        self._endpoints_probed = True
+
+
     async def submit_guess(self, session: aiohttp.ClientSession, guess_code: str) -> dict:
         """
         Submits a 5-digit guess to Lucid's rewards endpoint.
+        Returns full parsed response dict, or {} on failure.
         """
         payload = {"code": guess_code, "guess": guess_code}
         start_time = time.perf_counter()
 
         try:
-            async with session.post(self.api_url, json=payload, headers=self.headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
+            async with session.post(self.guess_url, json=payload, headers=self.headers,
+                                    timeout=aiohttp.ClientTimeout(total=4)) as resp:
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
-                data = await resp.json()
-                logger.info(f"🎯 Guess '{guess_code}' -> HTTP {resp.status} ({elapsed_ms:.1f}ms): {data}")
-                return data
+                text = await resp.text()
+                logger.info(f"🎯 Guess '{guess_code}' → HTTP {resp.status} ({elapsed_ms:.1f}ms): {text[:200]!r}")
+                try:
+                    return await resp.json(content_type=None) if text.strip() else {}
+                except Exception:
+                    return {"_raw": text, "_status": resp.status}
         except Exception as e:
             logger.error(f"⚠️ Error submitting guess '{guess_code}': {e}")
             return {}
@@ -240,152 +323,209 @@ class MastermindSolver:
 
     async def solve(self) -> str:
         """
-        Optimized prefix-pruned backtracking solver:
-        Starts guessing randomly to gather constraints, then dynamically filters remaining search space.
+        Optimized prefix-pruned backtracking solver.
+        Starts guessing randomly to gather constraints, then filters remaining search space.
         """
         logger.info("⚡ Solving Mastermind Giveaway Event...")
         connector = aiohttp.TCPConnector(limit=10, ssl=False)
         
         async with aiohttp.ClientSession(connector=connector) as session:
-            # Refresh token before starting solver if it doesn't exist
             if not self.token:
                 await self.refresh_token(session)
+            if not self._endpoints_probed:
+                await self._probe_endpoints(session)
 
             history = []
-            
-            # Start with a random initial guess
             next_guess = "".join(random.choices(CHAR_SET, k=5))
+            consecutive_empty = 0
             
-            for round_num in range(1, 15):
-                logger.info(f"👉 [Round {round_num}] Submitting Guess: '{next_guess}'...")
+            for round_num in range(1, 20):
+                logger.info(f"👉 [Round {round_num}] Submitting Guess: '{next_guess}' to {self.guess_url}")
                 
                 resp_data = await self.submit_guess(session, next_guess)
                 
                 if not resp_data:
-                    # Retry in case of temporary network glitches
+                    consecutive_empty += 1
+                    if consecutive_empty >= 3:
+                        logger.warning("🚫 3 consecutive empty responses — event may be inactive or endpoint wrong. Stopping.")
+                        return None
                     await asyncio.sleep(2)
                     continue
-                
-                # Check for win condition
-                if resp_data.get("message") == "code_match" or resp_data.get("win") or resp_data.get("status") == "success":
-                    logger.info(f"🏆 SUCCESS! Mastermind solved on round {round_num}. The correct code is '{next_guess}'!")
+                consecutive_empty = 0
+
+                raw_str = str(resp_data).lower()
+
+                # ── Win condition ─────────────────────────────────────────
+                WIN_KEYS = ["code_match", "win", "winner", "success", "correct", "found"]
+                if (any(resp_data.get(k) for k in ["win", "winner", "found"])
+                        or resp_data.get("message") in ("code_match", "success")
+                        or resp_data.get("status") in ("success", "win", "winner")):
+                    logger.info(f"🏆 MASTERMIND SOLVED on round {round_num}! Code: '{next_guess}'")
                     return next_guess
-                
-                # Retrieve spot feedback
-                correct_spot = resp_data.get("correct") or resp_data.get("correctSpot") or resp_data.get("correct_spot")
-                wrong_spot = resp_data.get("wrong") or resp_data.get("wrongSpot") or resp_data.get("wrong_spot")
-                
+
+                # ── Inactive / ended ──────────────────────────────────────
+                DEAD_SIGNALS = ["inactive", "no spots", "ended", "over", "finished", "not active", "no event"]
+                if any(sig in raw_str for sig in DEAD_SIGNALS):
+                    logger.warning(f"🚫 Event inactive/ended: {resp_data}")
+                    return None
+
+                # ── Parse feedback ────────────────────────────────────────
+                # Support many different key name conventions
+                correct_spot = (
+                    resp_data.get("correctSpot") or resp_data.get("correct_spot")
+                    or resp_data.get("correct") or resp_data.get("bulls")
+                    or resp_data.get("exactMatches") or resp_data.get("exact")
+                )
+                wrong_spot = (
+                    resp_data.get("wrongSpot") or resp_data.get("wrong_spot")
+                    or resp_data.get("wrong") or resp_data.get("cows")
+                    or resp_data.get("partialMatches") or resp_data.get("partial")
+                )
+
+                # Try nested data key
+                if correct_spot is None and isinstance(resp_data.get("data"), dict):
+                    d = resp_data["data"]
+                    correct_spot = d.get("correctSpot") or d.get("correct_spot") or d.get("correct") or d.get("bulls")
+                    wrong_spot   = d.get("wrongSpot")   or d.get("wrong_spot")   or d.get("wrong")   or d.get("cows")
+
                 if correct_spot is None or wrong_spot is None:
-                    # Check if event has ended or if we are out of spots
-                    if resp_data.get("status") == "inactive" or "no spots" in str(resp_data).lower():
-                        logger.warning("🚫 Event ended or no spots left. Stopping solver.")
-                        return None
-                    
-                    logger.warning(f"❓ Unexpected response format (no match feedback): {resp_data}")
-                    
-                else:
-                    logger.info(f"📊 Feedback: {correct_spot} correct spot, {wrong_spot} wrong spot.")
-                    history.append((next_guess, correct_spot, wrong_spot))
-                
-                # Calculate next constraint-satisfying candidate using optimized backtracking
-                start_filter = time.perf_counter()
-                next_guess_candidate = self.find_candidate_backtrack(history)
-                filter_ms = (time.perf_counter() - start_filter) * 1000
-                
-                if next_guess_candidate:
-                    logger.info(f"⚡ Next guess generated in {filter_ms:.2f}ms: '{next_guess_candidate}' (satisfies {len(history)} historic rules)")
-                    next_guess = next_guess_candidate
-                else:
-                    # Fallback to random if constraints collapsed
+                    logger.warning(f"❓ No feedback fields in response: {resp_data} — cannot update constraints, trying fresh random guess")
                     next_guess = "".join(random.choices(CHAR_SET, k=5))
-                
-                # 3.1 second delay between guesses to respect the 3-second server timeout
+                    await asyncio.sleep(3.1)
+                    continue
+
+                correct_spot = int(correct_spot)
+                wrong_spot   = int(wrong_spot)
+                logger.info(f"📊 Feedback: {correct_spot} exact, {wrong_spot} partial")
+                history.append((next_guess, correct_spot, wrong_spot))
+
+                # Win check via feedback
+                if correct_spot == 5:
+                    logger.info(f"🏆 MASTERMIND SOLVED! Code: '{next_guess}'")
+                    return next_guess
+
+                # ── Generate next guess ───────────────────────────────────
+                t0 = time.perf_counter()
+                candidate = self.find_candidate_backtrack(history)
+                logger.info(f"⚡ Next guess generated in {(time.perf_counter()-t0)*1000:.1f}ms: '{candidate}' (history depth={len(history)})")
+                next_guess = candidate or "".join(random.choices(CHAR_SET, k=5))
+
                 await asyncio.sleep(3.1)
                 
+            logger.warning("🔄 Max rounds reached without solving.")
             return None
 
 
     async def check_event_status(self, session: aiohttp.ClientSession) -> Tuple[bool, dict]:
         """
-        Polls the Lucid Mobile App '🎁 Giveaway' section status API.
+        Polls the Lucid giveaway status endpoint.
+        Auto-discovers the working URL on first call.
         Returns (is_active, status_data)
         """
-        status_urls = [
-            "https://dash.lucidtrading.com/api/giveaway/status",
-            "https://dash.lucidtrading.com/api/mobile/v1/giveaway/status",
-            "https://api.lucidtrading.com/v1/giveaway/status"
-        ]
-        
-        # If token doesn't exist, try logging in first
         if not self.token:
             await self.refresh_token(session)
+        if not self._endpoints_probed:
+            await self._probe_endpoints(session)
 
-        for url in status_urls:
+        # Build probe list: discovered best URL first, then all candidates
+        urls_to_try = [self.status_url] + [u for u in STATUS_ENDPOINTS if u != self.status_url]
+
+        for url in urls_to_try:
             try:
-                async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                    if resp.status == 200:
-                        self.auth_error_logged = False
-                        data = await resp.json()
-                        is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
-                        return is_active, data
-                    elif resp.status == 204:
-                        self.auth_error_logged = False
-                        return False, {}
-                    elif resp.status in (401, 403):
-                        # Token expired, try refreshing
-                        logger.warning(f"⚠️ Status check returned HTTP {resp.status}. Refreshing token...")
-                        if await self.refresh_token(session):
-                            # Retry request once with the new token
-                            async with session.get(url, headers=self.headers, timeout=aiohttp.ClientTimeout(total=3)) as retry_resp:
-                                if retry_resp.status == 200:
-                                    data = await retry_resp.json()
-                                    is_active = bool(data.get("active") or data.get("spots_left", 0) > 0 or data.get("status") == "active")
-                                    return is_active, data
-                                elif retry_resp.status == 204:
-                                    return False, {}
-                        
+                async with session.get(url, headers=self.headers,
+                                       timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                    text = await resp.text()
+
+                    # ── Token expired ─────────────────────────────────────
+                    if resp.status in (401, 403):
                         if not self.auth_error_logged:
-                            logger.error(f"❌ Authentication failure (HTTP {resp.status}) at {url}. Login credentials or cookie might be wrong!")
-                            self.auth_error_logged = True
-            except Exception:
+                            logger.warning(f"⚠️ HTTP {resp.status} from {url} — refreshing token...")
+                        if await self.refresh_token(session):
+                            self.auth_error_logged = False
+                            async with session.get(url, headers=self.headers,
+                                                   timeout=aiohttp.ClientTimeout(total=4)) as r2:
+                                text = await r2.text()
+                                resp = r2
+                        else:
+                            if not self.auth_error_logged:
+                                logger.error("❌ Token refresh failed. Check credentials.")
+                                self.auth_error_logged = True
+                            continue
+
+                    # ── 404 / 405 = not a real endpoint ──────────────────
+                    if resp.status in (404, 405):
+                        continue
+
+                    # ── Parse response ────────────────────────────────────
+                    self.auth_error_logged = False
+                    try:
+                        data = await resp.json(content_type=None) if text.strip() else {}
+                    except Exception:
+                        data = {"_raw": text}
+
+                    raw_str = str(data).lower()
+
+                    # Positive active signals
+                    ACTIVE_SIGNALS = ["active", "live", "open", "running", "spots"]
+                    DEAD_SIGNALS   = ["inactive", "ended", "over", "finished", "not active", "no event", "closed"]
+
+                    is_active = (
+                        bool(data.get("active"))
+                        or bool(data.get("isActive"))
+                        or bool(data.get("is_active"))
+                        or int(data.get("spots_left", 0) or data.get("spotsLeft", 0) or 0) > 0
+                        or data.get("status") in ("active", "live", "open")
+                        or any(s in raw_str for s in ACTIVE_SIGNALS)
+                    )
+
+                    if any(s in raw_str for s in DEAD_SIGNALS):
+                        is_active = False
+
+                    return is_active, data
+
+            except Exception as e:
+                logger.debug(f"Status check error ({url}): {e}")
                 continue
+
         return False, {}
 
 
     async def watch_and_solve(self):
         """
-        24/7 App Watcher: Monitors the Lucid App '🎁 Giveaway' section continuously.
-        Only starts guessing when a new giveaway event goes live!
+        24/7 App Watcher: Monitors the Lucid Giveaway section continuously.
+        Auto-discovers working endpoints at startup, then polls every 2s.
+        Only starts guessing when a live event is detected!
         """
-        logger.info("👀 [Tool 2] Watching Lucid Mobile App '🎁 Giveaway' Section 24/7...")
+        logger.info("👀 [Mastermind Watcher] Starting 24/7 giveaway monitor...")
         connector = aiohttp.TCPConnector(limit=10, ssl=False)
 
         async with aiohttp.ClientSession(connector=connector) as session:
+            # ── One-time startup: login + endpoint discovery ──────────────
+            if not self.token:
+                await self.refresh_token(session)
+            await self._probe_endpoints(session)
+
             check_count = 0
             while True:
                 check_count += 1
                 is_active, status_data = await self.check_event_status(session)
 
                 if is_active:
-                    # Trigger visual banner and audible alert
                     print("\a\a\a")
                     print("\n" + "🚨" * 25)
-                    print("🚨                                       🚨")
                     print("🚨   LUCID APP GIVEAWAY IS ACTIVE NOW!   🚨")
-                    print("🚨                                       🚨")
                     print("🚨" * 25 + "\n")
-                    logger.info("🚨 NEW EVENT DROPPED IN LUCID APP '🎁 GIVEAWAY' SECTION! Launching Mastermind solver...")
+                    logger.info(f"🚨 LIVE GIVEAWAY EVENT DETECTED! Status data: {status_data}")
+                    logger.info("🧠 Launching Mastermind solver...")
                     won_code = await self.solve()
                     if won_code:
-                        logger.info("🎉 GIVEAWAY GAME WON & CLAIMED! Auto-stopping script to stay 100% safe & stealthy.")
+                        logger.info(f"🎉 GIVEAWAY WON! Code: '{won_code}'. Stopping.")
                         return
-                    logger.info("🏁 Event finished! Returning to 24/7 Giveaway section watcher...")
-
+                    logger.info("🏁 Event finished — returning to watcher...")
                 else:
-                    if check_count % 5 == 1:
-                        logger.info("⏳ [Lucid App '🎁 Giveaway' Section] Status: Inactive / Event Ended. Watching for next drop...")
-                
-                # Poll status every 2 seconds
+                    if check_count % 30 == 1:  # log every 60s (30 * 2s)
+                        logger.info(f"⏳ [Giveaway Watcher] Inactive (check #{check_count}) — status: {status_data or 'no data'}")
+
                 await asyncio.sleep(2.0)
 
 async def main():
