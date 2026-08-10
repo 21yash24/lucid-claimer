@@ -33,13 +33,16 @@ logger = logging.getLogger("OCRSolver")
 class OcrSolver:
     def __init__(self):
         self.reader = None
-        if EASYOCR_AVAILABLE:
+        binary_path = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
+        if os.path.exists(binary_path):
+            logger.info("🍏 Using Native Apple Vision OCR (Hardware Accelerated - 0% CPU Load).")
+        elif EASYOCR_AVAILABLE:
             logger.info("Initializing EasyOCR Reader...")
             self.reader = easyocr.Reader(['en'])
         elif PYTESSERACT_AVAILABLE:
             logger.info("EasyOCR not found. Falling back to PyTesseract OCR...")
         else:
-            logger.warning("⚠️ No OCR library (easyocr or pytesseract) found! Image OCR will be disabled.")
+            logger.warning("⚠️ No OCR library found!")
         
     def filter_red_scribbles(self, img_path: str, output_path: str = None) -> "np.ndarray":
         """
