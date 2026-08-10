@@ -456,7 +456,7 @@ class MastermindSolver:
                     if check_count % 30 == 1:
                         logger.info(f"⏳ [Giveaway Watcher] Inactive (check #{check_count}) — status: {status_data or 'no data'}")
 
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(30.0)
 
 async def main():
     token = config.ACCOUNT_TOKENS[0] if config.ACCOUNT_TOKENS else None
