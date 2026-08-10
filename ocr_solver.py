@@ -113,14 +113,33 @@ class OcrSolver:
                     logger.error("❌ No OCR library (easyocr or pytesseract) available for extraction!")
                     extracted_text = ""
             else:
-                logger.warning("⚠️ OpenCV (cv2) not available. Performing raw OCR directly on the original image...")
+                logger.warning("⚠️ OpenCV (cv2) not available. Falling back to PIL-based red scribble removal...")
+                target_path = img_path
+                if preprocessed_path:
+                    try:
+                        img = Image.open(img_path).convert("RGB")
+                        pixels = img.load()
+                        width, height = img.size
+                        # Simple PIL-based red channel filter
+                        for y in range(height):
+                            for x in range(width):
+                                r, g, b = pixels[x, y]
+                                # If the pixel is red (high red, low green/blue)
+                                if r > 100 and r - g > 30 and r - b > 30:
+                                    pixels[x, y] = (15, 15, 15)  # Replace with dark background
+                        img.save(preprocessed_path)
+                        target_path = preprocessed_path
+                        logger.info(f"🎨 PIL preprocessed image saved to: {preprocessed_path}")
+                    except Exception as pe:
+                        logger.error(f"⚠️ PIL preprocessing failed: {pe}. Using raw image.")
+                        
                 if PYTESSERACT_AVAILABLE:
-                    pil_img = Image.open(img_path)
+                    pil_img = Image.open(target_path)
                     custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
                     extracted_text = pytesseract.image_to_string(pil_img, config=custom_config).strip()
                 elif EASYOCR_AVAILABLE and self.reader:
                     # EasyOCR can also read direct file paths
-                    results = self.reader.readtext(img_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                    results = self.reader.readtext(target_path, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                     extracted_text = " ".join(results)
                 else:
                     logger.error("❌ No OCR library (easyocr or pytesseract) available for raw extraction!")
