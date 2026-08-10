@@ -22,6 +22,12 @@ def clean_discord_text(text: str) -> str:
     text = re.sub(r'<a?:[a-zA-Z0-9_]+:\d+>', '', text)
     return text
 
+FORBIDDEN_WORDS = {
+    "PAYMENT", "CANCEL", "CLOSE", "TERMS", "PRIVACY", "CREDIT", "CARD", 
+    "CHECKOUT", "PROCEED", "SELECT", "SUMMARY", "LUCID", "TRADING", 
+    "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT"
+}
+
 def extract_all_giveaway_codes(text: str) -> List[str]:
     """
     Scans raw text and extracts ALL unique giveaway codes or claim keys found.
@@ -38,8 +44,11 @@ def extract_all_giveaway_codes(text: str) -> List[str]:
         matches = pattern.finditer(cleaned_text)
         for match in matches:
             code = match.group(1) if match.groups() else match.group(0)
-            # Avoid matching purely numeric 18-19 digit Discord IDs
+            code_upper = code.upper()
+            # Exclude Discord IDs and generic UI words
             if code.isdigit() and len(code) >= 17:
+                continue
+            if code_upper in FORBIDDEN_WORDS:
                 continue
             if code and code not in extracted_codes:
                 extracted_codes.append(code)

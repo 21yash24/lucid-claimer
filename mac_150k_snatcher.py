@@ -172,10 +172,14 @@ def find_and_click_coupon_field_and_button():
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             area = cv2.contourArea(c)
-            if area > 500 * (scale_x * scale_y) and w > h:
+            y_disp = y / scale_y
+            w_disp = w / scale_x
+            # Top half of screen only (Apply Coupon button is near top of modal, y < 450 in display points)
+            if area > 300 * (scale_x * scale_y) and w > h and y_disp < 450 and w_disp < 220:
                 green_buttons.append((x, y, w, h, c))
 
         if not green_buttons:
+            logger.warning("⚠️ Apply Coupon green button not found in top half of modal!")
             return None
 
         green_buttons.sort(key=lambda b: b[1])
