@@ -27,7 +27,9 @@ def clean_discord_text(text: str) -> str:
 FORBIDDEN_WORDS = {
     "PAYMENT", "CANCEL", "CLOSE", "TERMS", "PRIVACY", "CREDIT", "CARD", 
     "CHECKOUT", "PROCEED", "SELECT", "SUMMARY", "LUCID", "TRADING", 
-    "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT", "CODE"
+    "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT", "CODE",
+    "OFF", "COPY", "EVAL", "25K", "50K", "100K", "150K", "LUCIDPRO", "LUCIDPRE",
+    "PRO", "PERCENT", "FREE"
 }
 
 COMMON_ENGLISH_WORDS = {

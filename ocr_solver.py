@@ -68,9 +68,9 @@ class OcrSolver:
             return img_path
 
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # Red occupies two hue bands
-        m1 = cv2.inRange(hsv, np.array([0,   140, 80]), np.array([10,  255, 255]))
-        m2 = cv2.inRange(hsv, np.array([165, 140, 80]), np.array([180, 255, 255]))
+        # Red occupies two hue bands (saturation >= 50, value >= 50)
+        m1 = cv2.inRange(hsv, np.array([0,    50, 50]), np.array([12,  255, 255]))
+        m2 = cv2.inRange(hsv, np.array([160,  50, 50]), np.array([180, 255, 255]))
         red_mask = cv2.bitwise_or(m1, m2)
 
         # Expand mask to cover anti-aliased stroke edges
@@ -207,18 +207,11 @@ class OcrSolver:
           - Contain BOTH at least one letter AND at least one digit
         """
         # Try reconstruction first — use RAW image OCR since inpainting can distort letters
-        # The raw OCR gives the most accurate letter fragments, just split by the red X line
         if text:
-            # The RAW pass is always the last entry in combined text
-            lines_all = text.splitlines()
-            # Find the RAW pass block — it starts after the CLEANED pass
-            # Both passes separated in combined text; RAW has the cleaner letter reading
-            # We reconstruct from ALL lines (both passes) and take the best fragments
             reconstructed = self._reconstruct_code_from_fragments(text)
             if reconstructed:
                 has_letter = any(c.isalpha() for c in reconstructed)
-                has_digit  = any(c.isdigit() for c in reconstructed)
-                if has_letter and has_digit and 5 <= len(reconstructed) <= 25:
+                if has_letter and 4 <= len(reconstructed) <= 25:
                     logger.info(f"✅ Using reconstructed code: '{reconstructed}'")
                     return [reconstructed]
 
