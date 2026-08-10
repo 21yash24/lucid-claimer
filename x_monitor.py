@@ -159,12 +159,16 @@ class XMonitor:
                         if not tweets:
                             continue
                             
-                        # Process from oldest to newest in the count sample
-                        for tweet in reversed(tweets):
-                            if is_first_check:
-                                self.seen_tweets.add(tweet.id)
-                                continue
+                        # On startup, check the newest tweet (tweets[0]) immediately for codes
+                        if is_first_check:
+                            for idx, t in enumerate(tweets):
+                                if idx == 0:
+                                    # Always check newest tweet on startup
+                                    pass
+                                else:
+                                    self.seen_tweets.add(t.id)
 
+                        for tweet in reversed(tweets):
                             if tweet.id in self.seen_tweets:
                                 continue
 
