@@ -195,34 +195,27 @@ def paste_code_to_chrome(code: str):
 # Core Snatch Logic
 # ────────────────────────────────────────────────────────
 async def snatch_code(code: str, origin: str = "Manual"):
-    from parser import generate_code_variations
-    all_variants = generate_code_variations(code.strip().upper())
-    primary_code = all_variants[0]
-
-    if primary_code in claimed_codes:
+    code = code.strip().upper()
+    if not code or code in claimed_codes:
         return
 
-    for v in all_variants:
-        claimed_codes.add(v)
-
+    claimed_codes.add(code)
     print("\a\a\a")
     print("\n" + "🔥" * 30)
-    print(f"🚀   SNATCHING 150K ACCOUNT WITH CODE: '{primary_code}' (Variants: {all_variants}) (Origin: {origin})   🚀")
+    print(f"🚀   SNATCHING 150K ACCOUNT WITH CODE: '{code}' (Origin: {origin})   🚀")
     print("🔥" * 30 + "\n")
-    logger.info(f"⚡ Triggering instant checkout for code: '{primary_code}' and variants: {all_variants}...")
+    logger.info(f"⚡ Triggering instant checkout for code: '{code}'...")
 
-    # 1. Auto-paste primary code into Chrome
-    paste_code_to_chrome(primary_code)
+    # 1. Auto-paste code into Chrome
+    paste_code_to_chrome(code)
 
-    # 2. Parallel Direct API Checkout for all variants simultaneously!
-    tasks = []
-    for c in all_variants:
-        tasks.append(claimer.checkout_all_accounts(c, plan_id="150k"))
-        tasks.append(claimer.claim_all_accounts(c))
-        tasks.append(claimer.checkout_all_accounts(c, plan_id="50k"))
+    # 2. Direct API Checkout
+    task_150k   = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="150k"))
+    task_secret = asyncio.create_task(claimer.claim_all_accounts(code))
+    task_50k    = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="50k"))
 
-    await asyncio.gather(*tasks, return_exceptions=True)
-    logger.info("🏁 Snatch complete for code and variants.")
+    await asyncio.gather(task_150k, task_secret, task_50k, return_exceptions=True)
+    logger.info("🏁 Snatch complete for code.")
 
 # ────────────────────────────────────────────────────────
 # X Tweet Callback

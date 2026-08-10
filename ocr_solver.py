@@ -218,10 +218,11 @@ class OcrSolver:
 
         final_codes = self.reconstruct_ensemble_consensus(raw_candidates)
         if final_codes:
-            logger.info(f"✅ 100% Ensemble OCR Code Candidates: {final_codes}")
-            return final_codes
+            best_code = final_codes[0]
+            logger.info(f"✅ Single Best Predicted Code: '{best_code}'")
+            return [best_code]
 
         from parser import extract_all_giveaway_codes
         raw = extract_all_giveaway_codes(text)
         strong = [c for c in raw if any(ch.isalpha() for ch in c) and len(c) >= 4]
-        return strong if strong else raw
+        return [strong[0]] if strong else (raw[:1] if raw else [])
