@@ -22,7 +22,9 @@ import config
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("CrackSolver")
 
-ssl_context = ssl.create_default_context(cafile=certifi.where())
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 # Candidate character set for 5-digit code (Digits 0-9 and Uppercase A-Z)
 CHAR_SET = string.digits + string.ascii_uppercase  # '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -398,27 +400,23 @@ class MastermindSolver:
                     except Exception:
                         data = {"_raw": text}
 
-                    raw_str = str(data).lower()
-
-                    ACTIVE_SIGNALS = ["active", "live", "open", "running"]
-                    DEAD_SIGNALS   = ["inactive", "ended", "over", "finished", "not active", "no event", "closed"]
-
-                    is_active = (
-                        bool(data.get("active"))
-                        or bool(data.get("isActive"))
-                        or bool(data.get("is_active"))
-                        or data.get("status") in ("active", "live", "open")
-                        or any(s in raw_str for s in ACTIVE_SIGNALS)
-                    )
-
-                    if any(s in raw_str for s in DEAD_SIGNALS):
-                        is_active = False
+                    # Check explicit JSON boolean / status fields first
+                    is_active = False
+                    if isinstance(data, dict):
+                        if data.get("active") is True or data.get("isActive") is True or data.get("is_active") is True:
+                            is_active = True
+                        elif data.get("status") in ("active", "live", "open"):
+                            is_active = True
+                        elif data.get("eventId") or data.get("id"):
+                            # If eventId is present and status is not explicitly ended/closed
+                            if data.get("status") not in ("ended", "closed", "inactive", "finished"):
+                                is_active = True
 
                     if is_active:
                         event_id = data.get("id") or data.get("eventId") or data.get("event_id") or data.get("event", {}).get("id")
                         if event_id:
                             self.event_id = int(event_id)
-                            logger.info(f"📍 Extracted Event ID: {self.event_id}")
+                            logger.info(f"📍 Extracted Active Event ID: {self.event_id}")
 
                     return is_active, data
 
