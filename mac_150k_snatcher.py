@@ -124,19 +124,41 @@ async def clipboard_monitor_loop():
             logger.debug(f"Clipboard check error: {e}")
         await asyncio.sleep(0.5)
 
-async def x_tweet_callback(codes: list, tweet_text: str = ""):
-    logger.info(f"🐦 Tweet detected! Extracted codes: {codes}")
-    for c in codes:
-        await snatch_code(c, origin="Twitter/X (@cj_wawa)")
+async def mac_screen_ocr_loop():
+    """Takes instant macOS screenshots and runs OCR to catch image drop codes visible on screen."""
+    try:
+        from ocr_solver import OcrSolver
+        ocr = OcrSolver()
+    except Exception as e:
+        logger.debug(f"OCR Solver import warning: {e}")
+        return
+
+    tmp_shot = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp_images", "mac_screen.png")
+    while True:
+        try:
+            # Capture full macOS screen instantly
+            res = subprocess.run(['screencapture', '-x', tmp_shot], capture_output=True)
+            if res.returncode == 0 and os.path.exists(tmp_shot):
+                text = ocr.ocr_image(tmp_shot)
+                if text:
+                    codes = extract_all_giveaway_codes(text)
+                    for c in codes:
+                        if c not in claimed_codes:
+                            logger.info(f"👁️ OCR Detected Code on Mac Screen Image: '{c}'!")
+                            await snatch_code(c, origin="macOS Screen OCR")
+        except Exception as e:
+            logger.debug(f"Screen OCR error: {e}")
+        await asyncio.sleep(1.5)
 
 async def terminal_input_loop():
     loop = asyncio.get_running_loop()
-    print("\n" + "=" * 60)
-    print("🎯 MAC EXCLUSIVE 150K ACCOUNT SNATCHER IS ACTIVE!")
-    print("   1. Auto-monitoring @cj_wawa Twitter feed.")
-    print("   2. Auto-monitoring macOS Clipboard (copy any code to snatch!).")
-    print("   3. Or TYPE/PASTE any code below & hit ENTER to claim instantly:")
-    print("=" * 60 + "\n")
+    print("\n" + "=" * 65)
+    print("🎯 MAC EXCLUSIVE 150K ACCOUNT ULTRA-SNATCHER IS ACTIVE!")
+    print("   1. Auto-monitoring @cj_wawa Twitter feed (text & image attachments).")
+    print("   2. Auto-monitoring macOS Screen OCR (detects codes in tweet images on screen!).")
+    print("   3. Auto-monitoring macOS Clipboard (copy any code to snatch!).")
+    print("   4. Terminal Input (type/paste any code below & hit ENTER):")
+    print("=" * 65 + "\n")
 
     while True:
         try:
@@ -149,6 +171,11 @@ async def terminal_input_loop():
             logger.error(f"Terminal input error: {e}")
             await asyncio.sleep(1)
 
+async def x_tweet_callback(codes: list, tweet_text: str = ""):
+    logger.info(f"🐦 Tweet detected! Extracted codes: {codes}")
+    for c in codes:
+        await snatch_code(c, origin="Twitter/X (@cj_wawa)")
+
 async def main():
     errors = config.validate_config()
     if errors:
@@ -159,19 +186,22 @@ async def main():
 
     await claimer.initialize()
 
-    # Launch X Monitor
+    # 1. Launch X Monitor (@cj_wawa feed)
     x_mon = XMonitor(x_tweet_callback)
     x_ok = await x_mon.initialize()
     if x_ok:
         logger.info("🐦 Connected to X Monitor for @cj_wawa feed!")
         asyncio.create_task(x_mon.poll_timeline())
     else:
-        logger.warning("⚠️ X Monitor initialization failed (will rely on Clipboard + Terminal input).")
+        logger.warning("⚠️ X Monitor initialization failed (will rely on Screen OCR + Clipboard + Terminal input).")
 
-    # Launch Clipboard Monitor
+    # 2. Launch Screen OCR Monitor (Scans full Mac screen for image tweet codes)
+    asyncio.create_task(mac_screen_ocr_loop())
+
+    # 3. Launch Clipboard Monitor (Cmd+C)
     asyncio.create_task(clipboard_monitor_loop())
 
-    # Launch Terminal Input listener
+    # 4. Launch Terminal Input listener
     await terminal_input_loop()
 
 if __name__ == "__main__":
