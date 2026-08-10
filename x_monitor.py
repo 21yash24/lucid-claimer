@@ -149,8 +149,9 @@ class XMonitor:
                 
                 try:
                     for username in users_to_poll:
-                        # Get user profile once and cache it to cut API requests and prevent rate limits
+                        # Get user profile ONCE and cache permanently to prevent 429 rate limits
                         if username not in user_objects:
+                            logger.info(f"🔍 Looking up user ID for @{username}...")
                             user_objects[username] = await self.client.get_user_by_screen_name(username)
                         
                         user = user_objects[username]
