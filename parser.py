@@ -2,11 +2,11 @@ import re
 from typing import List, Optional
 
 # Regular expressions for common giveaway drop patterns
-# Match LBOX codes, CJ/WAWA/LUCID/FLEX codes, or general uppercase alphanumeric coupon codes (3-30 chars)
+# Match LBOX codes, CJ/WAWA/LUCID/FLEX codes, or general alphanumeric coupon codes (3-30 chars)
 CODE_PATTERNS = [
     re.compile(r'\bLBOX[A-Z0-9_-]{2,30}\b', re.IGNORECASE),
-    re.compile(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Z0-9_-]{1,25}\b', re.IGNORECASE),
-    re.compile(r'\b[A-Z0-9]{4,25}\b'),
+    re.compile(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Z0-9_-]{0,25}\b', re.IGNORECASE),
+    re.compile(r'\b[A-Z0-9]{4,25}\b', re.IGNORECASE),
 ]
 
 
@@ -30,6 +30,20 @@ FORBIDDEN_WORDS = {
     "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT", "CODE"
 }
 
+COMMON_ENGLISH_WORDS = {
+    "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HER", 
+    "WAS", "ONE", "OUR", "OUT", "DAY", "GET", "HAS", "HIM", "HIS", "HOW", 
+    "ITS", "NEW", "NOW", "OLD", "SEE", "TWO", "WAY", "WHO", "DID", "HAVE", 
+    "FROM", "THEY", "THIS", "WILL", "YOUR", "BEEN", "GOOD", "MUCH", "SOME", 
+    "TIME", "VERY", "WHEN", "COME", "HERE", "JUST", "KNOW", "LIKE", "LOOK", 
+    "MAKE", "MOST", "OVER", "SUCH", "TAKE", "THAN", "THEM", "WELL", "WERE", 
+    "WITH", "THAT", "INTO", "ONLY", "ALSO", "BACK", "AFTER", "FIRST", "THEIR", 
+    "THERE", "THESE", "THINK", "THOSE", "ABOUT", "COULD", "EVERY", "GOING", 
+    "GREAT", "WHICH", "WOULD", "OTHER", "TRADE", "TODAY", "OFFER", "VALID", 
+    "CLAIM", "CHECK", "RETWEET", "FOLLOW", "COMMENT", "REPLY", "HTTPS", "HTTP",
+    "TWITTER", "PIC", "STATUS", "MEDIA", "PHOTO", "VIDEO", "LINK"
+}
+
 def extract_all_giveaway_codes(text: str) -> List[str]:
     """
     Scans raw text and extracts ALL unique giveaway codes or claim keys found.
@@ -39,30 +53,30 @@ def extract_all_giveaway_codes(text: str) -> List[str]:
         return []
 
     cleaned_text = clean_discord_text(text)
+    # Remove URLs
+    cleaned_text = re.sub(r'https?://\S+|t\.co/\S+', '', cleaned_text, flags=re.IGNORECASE)
+
     extracted_codes = []
 
-    # 1. Search for all pattern matches in text
-    for pattern in CODE_PATTERNS:
-        matches = pattern.finditer(cleaned_text)
-        for match in matches:
-            code = match.group(1) if match.groups() else match.group(0)
-            code_upper = code.upper()
-            # Exclude Discord IDs and generic UI words
-            if code.isdigit() and len(code) >= 17:
-                continue
-            if code_upper in FORBIDDEN_WORDS:
-                continue
-            if code and code not in extracted_codes:
-                extracted_codes.append(code)
+    # 1. First search for explicit code patterns after keywords like 'code', 'coupon', 'use'
+    keyword_match = re.finditer(r'(?:code|coupon|use|drop|key|voucher)\s*[:=»"“\'`]?\s*([A-Za-z0-9_-]{3,30})', cleaned_text, re.IGNORECASE)
+    for m in keyword_match:
+        c = m.group(1).strip().upper()
+        if c not in FORBIDDEN_WORDS and c not in COMMON_ENGLISH_WORDS and len(c) >= 3:
+            if c not in extracted_codes:
+                extracted_codes.append(c)
 
-    # 2. Search for claim links with ?code= or ?claim=
-    url_matches = URL_PATTERN.findall(cleaned_text)
-    for url in url_matches:
-        code_param = re.search(r'[?&](?:code|claim|key|drop)=([A-Z0-9_-]+)', url, re.IGNORECASE)
-        if code_param:
-            code = code_param.group(1)
-            if code and code not in extracted_codes:
-                extracted_codes.append(code)
+    # 2. Extract any standalone alphanumeric token (3-25 chars) that is not a forbidden or noise word
+    tokens = re.findall(r'\b[A-Za-z0-9_-]{3,25}\b', cleaned_text)
+    for token in tokens:
+        t_upper = token.upper()
+        if t_upper.isdigit() and len(t_upper) >= 15: # Ignore long numeric IDs
+            continue
+        if t_upper not in FORBIDDEN_WORDS and t_upper not in COMMON_ENGLISH_WORDS:
+            # Must contain at least 1 letter or digit
+            if any(ch.isalnum() for ch in t_upper):
+                if t_upper not in extracted_codes:
+                    extracted_codes.append(t_upper)
 
     return extracted_codes
 
