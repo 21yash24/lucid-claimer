@@ -68,11 +68,21 @@ def find_and_click_green_button():
             logger.warning("⚠️ Green button not found on screen!")
             return False
 
-        # Get the largest green region (the PROCEED TO PAYMENT button)
-        largest = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest) < 1000:  # too small — skip
+        # Filter: PROCEED TO PAYMENT is a WIDE button (full modal width ~400px+)
+        # Small green nav buttons (like "Add") must be ignored
+        wide_contours = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            area = cv2.contourArea(c)
+            # Must be wide (>300px), wider than tall, and large area
+            if w > 300 and w > h * 3 and area > 5000:
+                wide_contours.append(c)
+
+        if not wide_contours:
+            logger.warning("⚠️ PROCEED TO PAYMENT button not found (no wide green region)!")
             return False
 
+        largest = max(wide_contours, key=cv2.contourArea)
         M = cv2.moments(largest)
         cx = int(M["m10"] / M["m00"])
         cy = int(M["m01"] / M["m00"])
