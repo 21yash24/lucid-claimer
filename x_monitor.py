@@ -231,34 +231,35 @@ class XMonitor:
             while True:
                 try:
                     for username in target_users_list:
-                        # Use hardcoded ID if available to prevent get_user_by_screen_name API calls entirely
                         user_id = HARDCODED_USER_IDS.get(username)
+                        user_tweets_list = []
+
+                        # 1. Fetch Media tweets tab (where image drops are posted!)
                         if user_id:
                             try:
-                                tweets = await self.client.get_user_tweets(user_id, 'Tweets', count=5)
-                            except Exception as req_err:
-                                if "429" in str(req_err) or "limit" in str(req_err).lower():
-                                    logger.debug(f"GraphQL 429 for {username} — RSS Engine active.")
-                                    await asyncio.sleep(30)
-                                    continue
-                                else:
-                                    tweets = None
-                        else:
+                                m_tweets = await self.client.get_user_tweets(user_id, 'Media', count=5)
+                                if m_tweets:
+                                    user_tweets_list.extend(m_tweets)
+                            except Exception as m_err:
+                                logger.debug(f"Media tab fetch note for {username}: {m_err}")
+
+                            # 2. Fetch main Tweets tab
                             try:
-                                user = await self.client.get_user_by_screen_name(username)
-                                tweets = await user.get_tweets('Tweets', count=5)
-                            except Exception:
-                                tweets = None
-                        
-                        if not tweets:
+                                t_tweets = await self.client.get_user_tweets(user_id, 'Tweets', count=5)
+                                if t_tweets:
+                                    user_tweets_list.extend(t_tweets)
+                            except Exception as t_err:
+                                logger.debug(f"Tweets tab fetch note for {username}: {t_err}")
+
+                        if not user_tweets_list:
                             continue
-                            
+
                         if is_first_check:
-                            for t in tweets:
+                            for t in user_tweets_list:
                                 self.seen_tweets.add(t.id)
                             continue
 
-                        for tweet in reversed(tweets):
+                        for tweet in reversed(user_tweets_list):
                             if tweet.id in self.seen_tweets:
                                 continue
 
