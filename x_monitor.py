@@ -278,8 +278,8 @@ class XMonitor:
                         continue
                         
                     if "429" in str(e) or "limit" in str(e).lower():
-                        logger.warning("⏳ GraphQL rate limit hit — RSS Fast Engine is still running at 2.0s speed!")
-                        await asyncio.sleep(60)
+                        logger.debug("GraphQL rate limit — RSS Fast Engine running at 2.0s speed.")
+                        await asyncio.sleep(30)
                         continue
 
                 await asyncio.sleep(config.X_POLL_INTERVAL)
