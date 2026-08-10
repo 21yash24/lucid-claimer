@@ -15,6 +15,7 @@ import logging
 import subprocess
 import certifi
 import ssl
+import ctypes
 import aiohttp
 
 # Bypass SSL verification issues on Mac
@@ -34,17 +35,37 @@ from parser import extract_all_giveaway_codes
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("150kSnatcher")
 
-claimed_codes = set()
-claimer = MultiAccountClaimer(
-    config.REDEMPTION_API_URL,
-    config.ACCOUNT_TOKENS,
-    config.LUCID_ACCOUNTS
-)
+def native_mac_click(x: int, y: int):
+    """Generates native macOS hardware mouse click at display point (x, y)."""
+    try:
+        cg = ctypes.cdll.LoadLibrary('/System/Library/Frameworks/ApplicationServices.framework/Frameworks/CoreGraphics.framework/CoreGraphics')
+        
+        class CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        cg.CGEventCreateMouseEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint32, CGPoint, ctypes.c_uint32]
+        cg.CGEventCreateMouseEvent.restype = ctypes.c_void_p
+        cg.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+        cg.CGEventPost.restype = None
+
+        pt = CGPoint(float(x), float(y))
+        
+        # Mouse down (1), up (2)
+        e_down = cg.CGEventCreateMouseEvent(None, 1, pt, 0)
+        cg.CGEventPost(0, e_down)
+        import time; time.sleep(0.05)
+        e_up = cg.CGEventCreateMouseEvent(None, 2, pt, 0)
+        cg.CGEventPost(0, e_up)
+        logger.info(f"🖱️ Native CGEvent Clicked at display coords ({x}, {y})")
+        return True
+    except Exception as e:
+        logger.debug(f"Native Mac click error: {e}")
+        return False
 
 def find_and_click_green_button():
     """
     Takes a live Mac screenshot, finds the bright green PROCEED TO PAYMENT
-    button by color, and clicks its center using osascript mouse events.
+    button by color, and clicks its center using native CGEvent mouse clicks.
     """
     try:
         import cv2
@@ -78,7 +99,6 @@ def find_and_click_green_button():
             logger.warning("⚠️ Green button not found on screen!")
             return False
 
-        # Filter: PROCEED TO PAYMENT is a WIDE button (full modal width ~300px+ in display points)
         wide_contours = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
@@ -99,15 +119,7 @@ def find_and_click_green_button():
         cy = int(cy_px / scale_y)
 
         logger.info(f"🎯 Found green PROCEED TO PAYMENT button at display coords ({cx}, {cy})")
-
-        applescript_click = f'''
-        tell application "System Events"
-            click at {{{cx}, {cy}}}
-        end tell
-        '''
-        subprocess.run(['osascript', '-e', applescript_click], capture_output=True)
-        logger.info(f"🏆 Clicked PROCEED TO PAYMENT at ({cx}, {cy})!")
-        return True
+        return native_mac_click(cx, cy)
 
     except Exception as e:
         logger.debug(f"Green button click error: {e}")
@@ -131,15 +143,12 @@ def find_and_click_coupon_field_and_button():
 
         img_h, img_w = img.shape[:2]
 
-        # Get main display logical bounds via AppleScript
         applescript_screen = 'tell application "Finder" to get bounds of window of desktop'
         res = subprocess.run(['osascript', '-e', applescript_screen], capture_output=True, text=True)
-        # Output format: "0, 0, 1470, 956"
         parts = [int(p.strip()) for p in res.stdout.strip().split(',')] if res.stdout.strip() else [0, 0, 1440, 900]
         disp_w = parts[2] - parts[0]
         disp_h = parts[3] - parts[1]
 
-        # Scale factor (e.g. 2.0 for Retina display)
         scale_x = img_w / float(disp_w)
         scale_y = img_h / float(disp_h)
 
@@ -152,7 +161,6 @@ def find_and_click_coupon_field_and_button():
         if not contours:
             return None
 
-        # Find all green buttons in image pixels
         green_buttons = []
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
@@ -163,20 +171,17 @@ def find_and_click_coupon_field_and_button():
         if not green_buttons:
             return None
 
-        # Sort by y-coordinate ascending (topmost green button in modal is "Apply Coupon")
         green_buttons.sort(key=lambda b: b[1])
 
         top_btn = green_buttons[0]
         bx_px, by_px, bw_px, bh_px, _ = top_btn
 
-        # Input field center in image pixels (~150px to left of button in image pixels)
         ix_px = max(10, bx_px - int(150 * scale_x))
         iy_px = by_px + bh_px // 2
 
         btn_center_x_px = bx_px + bw_px // 2
         btn_center_y_px = by_px + bh_px // 2
 
-        # Convert Retina image pixels -> display points
         input_x = int(ix_px / scale_x)
         input_y = int(iy_px / scale_y)
         btn_x = int(btn_center_x_px / scale_x)
@@ -193,12 +198,13 @@ def paste_code_to_frontmost_chrome(code: str):
     """
     Full automated checkout:
     1. Focuses Chrome.
-    2. Detects 'Apply Coupon Code' input box on screen and clicks it directly.
+    2. Detects 'Apply Coupon Code' input box on screen and clicks it using native CoreGraphics.
     3. Pastes code and clicks green 'Apply Coupon' button.
     4. Waits 2.5s for validation.
     5. Screenshot → detects green 'PROCEED TO PAYMENT' button → clicks it.
     """
     try:
+        import ctypes
         subprocess.run(['pbcopy'], input=code.encode('utf-8'))
 
         # Focus Chrome first
@@ -209,22 +215,25 @@ def paste_code_to_frontmost_chrome(code: str):
         coords = find_and_click_coupon_field_and_button()
         if coords:
             ix, iy, bx, by = coords
-            # Click input box, paste code, then click green Apply Coupon button
-            applescript_click = f'''
+            # Click input box
+            native_mac_click(ix, iy)
+            time.sleep(0.1)
+
+            # Select all + Paste
+            applescript_paste = '''
             tell application "System Events"
-                click at {{{ix}, {iy}}}
-                delay 0.1
-                keystroke "a" using {{command down}}
+                keystroke "a" using {command down}
                 delay 0.05
-                keystroke "v" using {{command down}}
-                delay 0.15
-                click at {{{bx}, {by}}}
+                keystroke "v" using {command down}
             end tell
             '''
-            subprocess.run(['osascript', '-e', applescript_click], capture_output=True)
-            logger.info(f"🖱️ Step 1 — Clicked input box, pasted '{code}', clicked Apply Coupon button!")
+            subprocess.run(['osascript', '-e', applescript_paste], capture_output=True)
+            time.sleep(0.15)
+
+            # Click Apply Coupon button
+            native_mac_click(bx, by)
+            logger.info(f"🖱️ Step 1 — Clicked input box ({ix},{iy}), pasted '{code}', clicked Apply Coupon button ({bx},{by})!")
         else:
-            # Fallback if detection fails: standard Tab/Enter
             applescript_fallback = '''
             tell application "System Events"
                 keystroke "v" using {command down}
