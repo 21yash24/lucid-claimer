@@ -141,21 +141,39 @@ class OcrSolver:
         Removes red scribbles (if opencv is available), performs OCR on the image, and returns all extracted text.
         """
         try:
-            # 1. Try macOS Native Neural Engine Vision OCR if on Mac
+            texts = []
+
+            # 1. Filter red scribbles first
+            processed_img = None
+            if CV2_AVAILABLE:
+                processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
+
+            # 2. Try macOS Native Neural Engine Vision OCR on raw image AND clean filtered image
             binary_path = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
             if os.path.exists(binary_path):
+                # Try raw image
                 try:
-                    res = subprocess.run([binary_path, img_path], capture_output=True, text=True, timeout=3)
-                    if res.returncode == 0 and res.stdout.strip():
-                        vision_text = res.stdout.strip()
-                        logger.info(f"🍏 [Apple Neural Engine Vision OCR] Extracted: {vision_text!r}")
-                        return vision_text
+                    res1 = subprocess.run([binary_path, img_path], capture_output=True, text=True, timeout=3)
+                    if res1.returncode == 0 and res1.stdout.strip():
+                        t1 = res1.stdout.strip()
+                        logger.info(f"🍏 [Apple Vision OCR Raw] Extracted: {t1!r}")
+                        texts.append(t1)
                 except Exception as e:
-                    logger.debug(f"Native Vision OCR error: {e}")
+                    logger.debug(f"Native Vision OCR raw error: {e}")
 
-            if CV2_AVAILABLE:
-                # Preprocess the image with OpenCV filters
-                processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
+                # Try clean scribble-filtered image
+                if preprocessed_path and os.path.exists(preprocessed_path):
+                    try:
+                        res2 = subprocess.run([binary_path, preprocessed_path], capture_output=True, text=True, timeout=3)
+                        if res2.returncode == 0 and res2.stdout.strip():
+                            t2 = res2.stdout.strip()
+                            logger.info(f"🍏 [Apple Vision OCR Cleaned] Extracted: {t2!r}")
+                            texts.append(t2)
+                    except Exception as e:
+                        logger.debug(f"Native Vision OCR clean error: {e}")
+
+                if texts:
+                    return "\n".join(texts)
                 
                 # EasyOCR can read from numpy arrays directly. We use uppercase alphanumeric allowlist
                 if EASYOCR_AVAILABLE and self.reader:
