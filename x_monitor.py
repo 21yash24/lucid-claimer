@@ -178,22 +178,21 @@ class XMonitor:
                             print(f"Content: {tweet.text}")
                             print("🐦" * 25 + "\n")
                             
-                            # 1. Parse text directly for codes
-                            codes = self.ocr_solver.find_lucid_codes(tweet.text)
-                            
-                            # 2. Check media attachments for codes (images with red scribbles)
+                            # ONLY extract codes from tweet image attachments via OCR.
+                            # Never parse raw tweet text — too many false positives.
                             media = getattr(tweet, "media", None) or getattr(tweet, "extended_entities", {}).get("media", [])
-                            if media:
-                                image_codes = await self.process_tweet_media(session, media)
-                                codes.extend(image_codes)
-                                
-                            # Remove duplicates
+                            if not media:
+                                logger.info(f"ℹ️  @{username} tweet has no image — skipping (text-only tweets ignored).")
+                                continue
+
+                            codes = await self.process_tweet_media(session, media)
                             codes = list(set(codes))
-                            
+
                             if codes:
-                                logger.info(f"⚡ Codes spotted in tweet from @{username}: {codes}. Dispatching claims...")
-                                # Trigger callback with the entire list of codes to allow serialized prioritized checkout
+                                logger.info(f"⚡ OCR found code(s) in @{username} tweet image: {codes} — triggering checkout!")
                                 asyncio.create_task(self.claim_callback(codes, tweet.text))
+                            else:
+                                logger.info(f"ℹ️  @{username} tweet image had no recognisable code — ignoring.")
                                     
                     is_first_check = False
                 except Exception as e:
