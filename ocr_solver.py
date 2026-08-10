@@ -139,13 +139,20 @@ class OcrSolver:
                         # 4. Invert (Tesseract prefers black text on white background)
                         inverted = ImageOps.invert(thresh)
                         
+                        # 4b. Vertical dilation to bridge horizontal gaps in letters (1x3 vertical min-filter)
+                        from PIL import ImageChops
+                        shifted_up = ImageChops.offset(inverted, 0, -1)
+                        shifted_down = ImageChops.offset(inverted, 0, 1)
+                        temp = ImageChops.darker(inverted, shifted_up)
+                        eroded = ImageChops.darker(temp, shifted_down)
+                        
                         # 5. Resize by 3.0x using BICUBIC for clean anti-aliased larger text
                         try:
                             resample_mode = Image.Resampling.BICUBIC
                         except AttributeError:
                             resample_mode = Image.BICUBIC
                             
-                        resized = inverted.resize((int(width * 3), int(height * 3)), resample_mode)
+                        resized = eroded.resize((int(width * 3), int(height * 3)), resample_mode)
                         resized.save(preprocessed_path)
                         target_path = preprocessed_path
                         logger.info(f"🎨 PIL preprocessed image saved to: {preprocessed_path}")
