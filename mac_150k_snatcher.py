@@ -395,22 +395,19 @@ async def main():
 
     await claimer.initialize()
 
-    # 1. Launch X Monitor (@cj_wawa feed)
+    # 1. Launch X Monitor (@cj_wawa & @yashhjhaa feed)
     x_mon = XMonitor(x_tweet_callback)
     x_ok = await x_mon.initialize()
     if x_ok:
-        logger.info("🐦 Connected to X Monitor for @cj_wawa feed!")
+        logger.info("🐦 Connected to X Monitor for targets!")
         asyncio.create_task(x_mon.poll_timeline())
     else:
-        logger.warning("⚠️ X Monitor initialization failed (will rely on Screen OCR + Clipboard + Terminal input).")
+        logger.warning("⚠️ X Monitor initialization failed.")
 
-    # 2. Launch Screen OCR Monitor (Scans full Mac screen for image tweet codes)
-    asyncio.create_task(mac_screen_ocr_loop())
-
-    # 3. Launch Clipboard Monitor (Cmd+C)
+    # 2. Launch Clipboard Monitor (Cmd+C)
     asyncio.create_task(clipboard_monitor_loop())
 
-    # 4. Launch Terminal Input listener
+    # 3. Launch Terminal Input listener
     await terminal_input_loop()
 
 if __name__ == "__main__":

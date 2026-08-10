@@ -159,14 +159,11 @@ class XMonitor:
                         if not tweets:
                             continue
                             
-                        # On startup, check the newest tweet (tweets[0]) immediately for codes
+                        # On startup, record all existing tweets in seen_tweets so we only trigger on fresh new tweets
                         if is_first_check:
-                            for idx, t in enumerate(tweets):
-                                if idx == 0:
-                                    # Always check newest tweet on startup
-                                    pass
-                                else:
-                                    self.seen_tweets.add(t.id)
+                            for t in tweets:
+                                self.seen_tweets.add(t.id)
+                            continue
 
                         for tweet in reversed(tweets):
                             if tweet.id in self.seen_tweets:
