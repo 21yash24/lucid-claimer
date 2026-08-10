@@ -110,13 +110,15 @@ class XMonitor:
         connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=connector) as session:
             poll_count = 0
+            user = None
             while True:
                 poll_count += 1
                 if poll_count % 5 == 1:
                     logger.info(f"📡 [X Monitor] Polling @{config.X_TARGET_USER} timeline (check #{poll_count})...")
                 try:
-                    # Get user's recent tweets
-                    user = await self.client.get_user_by_screen_name(config.X_TARGET_USER)
+                    # Get user profile once and cache it to cut API requests in half and prevent 429 rate limits
+                    if not user:
+                        user = await self.client.get_user_by_screen_name(config.X_TARGET_USER)
                     tweets = await user.get_tweets('Tweets', count=5)
                     
                     if not tweets:
@@ -162,5 +164,11 @@ class XMonitor:
                                 
                 except Exception as e:
                     logger.error(f"⚠️ Error polling X timeline: {e}")
+                    # If we get rate limited (429), back off for 90 seconds to reset rate limit window
+                    if "429" in str(e) or "limit" in str(e).lower():
+                        backoff_time = 90
+                        logger.warning(f"⏳ Rate limit exceeded (429) detected. Backing off/sleeping for {backoff_time} seconds...")
+                        await asyncio.sleep(backoff_time)
+                        continue
                     
                 await asyncio.sleep(config.X_POLL_INTERVAL)
