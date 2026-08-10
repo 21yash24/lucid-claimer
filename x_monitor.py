@@ -217,11 +217,13 @@ class XMonitor:
                             await asyncio.sleep(60)  # Wait a bit before next attempt
                         continue
                         
-                    # 2. If we get rate limited (429), back off for 300 seconds to reset rate limit window
+                    # 2. If we get rate limited (429), exponential backoff starting at 60s
                     if "429" in str(e) or "limit" in str(e).lower():
-                        backoff_time = 300
-                        logger.warning(f"⏳ Rate limit exceeded (429) detected. Sleeping for {backoff_time} seconds (5 minutes) to let Twitter reset your rate limit window...")
+                        # Exponential backoff: 60s → 120s → 240s → 300s max
+                        backoff_time = min(60 * (2 ** getattr(self, '_rate_limit_hits', 0)), 300)
+                        self._rate_limit_hits = getattr(self, '_rate_limit_hits', 0) + 1
+                        logger.warning(f"⏳ Rate limit hit #{self._rate_limit_hits}. Sleeping {backoff_time}s before retrying...")
                         await asyncio.sleep(backoff_time)
                         continue
-                    
+
                 await asyncio.sleep(config.X_POLL_INTERVAL)

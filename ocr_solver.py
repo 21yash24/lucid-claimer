@@ -201,22 +201,47 @@ class OcrSolver:
 
     def find_lucid_codes(self, text: str) -> list:
         """
-        Uses regex to search for possible Lucid Trading claim codes (alphanumeric, 6-12 chars, usually caps).
-        Typically matches words that have both letters and numbers, excluding standard words.
+        Extracts Lucid Trading promo/coupon codes from text.
+        Handles:
+          - Mixed alphanumeric codes (e.g. LIPE50100, LUC25K2024)
+          - Pure-letter promo codes in ALL CAPS (e.g. WAWA, LUCID, FREEEVAL)
+          - Codes embedded in sentences with surrounding punctuation
         """
-        # Remove URLs (like http://... or https://... or t.co/...) to prevent matching letters inside links
+        # Strip URLs to avoid false matches inside links
         clean_text = re.sub(r'https?://\S+|t\.co/\S+', '', text, flags=re.IGNORECASE)
-        
-        # Look for uppercase alphanumeric strings of length 6 to 12
-        potential_codes = re.findall(r'\b[A-Z0-9]{6,12}\b', clean_text.upper())
-        
-        valid_codes = []
-        for code in potential_codes:
-            # Exclude strings that are purely numeric (like timestamps) or purely letters (like standard English words)
-            if not code.isdigit() and not code.isalpha():
-                valid_codes.append(code)
-            # Standard custom codes like "WAWA" (pure letters) should be included if explicitly whitelisted
-            elif code in ["WAWA", "LUCID"]:
-                valid_codes.append(code)
-                
-        return list(set(valid_codes))
+
+        # Common noise words to exclude (all-caps versions of normal English words)
+        NOISE_WORDS = {
+            "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN",
+            "HER", "WAS", "ONE", "OUR", "OUT", "DAY", "GET", "HAS", "HIM",
+            "HIS", "HOW", "ITS", "NEW", "NOW", "OLD", "SEE", "TWO", "WAY",
+            "WHO", "DID", "HAVE", "FROM", "THEY", "THIS", "WILL", "YOUR",
+            "BEEN", "GOOD", "MUCH", "SOME", "TIME", "VERY", "WHEN", "COME",
+            "HERE", "JUST", "KNOW", "LIKE", "LOOK", "MAKE", "MOST", "OVER",
+            "SUCH", "TAKE", "THAN", "THEM", "WELL", "WERE", "WITH",
+            "THAT", "INTO", "ONLY", "ALSO", "BACK", "AFTER", "FIRST",
+            "THEIR", "THERE", "THESE", "THINK", "THOSE", "ABOUT", "COULD",
+            "EVERY", "GOING", "GREAT", "LUCID", "WHICH", "WOULD", "OTHER",
+            "TRADE", "TODAY", "OFFER", "VALID", "CLAIM", "CHECK",
+            "RETWEET", "FOLLOW", "COMMENT", "REPLY",
+        }
+
+        upper_text = clean_text.upper()
+        found = set()
+
+        # Pattern 1: Mixed alphanumeric (must contain at least 1 digit AND 1 letter), 4-16 chars
+        for m in re.finditer(r'\b([A-Z0-9]{4,16})\b', upper_text):
+            token = m.group(1)
+            has_digit  = any(c.isdigit() for c in token)
+            has_letter = any(c.isalpha() for c in token)
+            if has_digit and has_letter:
+                found.add(token)
+
+        # Pattern 2: Pure uppercase letter codes (4-12 chars), excluding noise words
+        # These are promo codes like WAWA, FREEEVAL, LUCIDPRO etc.
+        for m in re.finditer(r'\b([A-Z]{4,12})\b', upper_text):
+            token = m.group(1)
+            if token not in NOISE_WORDS:
+                found.add(token)
+
+        return list(found)

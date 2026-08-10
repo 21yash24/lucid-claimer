@@ -46,44 +46,63 @@ async def claim_code_callback(code: str, tweet_text: str = ""):
     if successful_claims >= MAX_CLAIMS:
         return
     if code in claimed_codes:
+        logger.info(f"🔁 Code '{code}' already processed, skipping.")
         return
-        
+
     claimed_codes.add(code)
-    logger.info(f"⚡ [Dual Claim Mode] Spotted code on X: '{code}'. Triggering BOTH API Secret Claim and Direct Checkout flows...")
-    
-    # 1. Determine target plans to try based on the tweet context
-    plans_to_try = ["50k", "25k"]
+    logger.info(f"⚡ CODE SPOTTED: '{code}' — firing all claim + checkout flows in parallel...")
+
+    # Determine target plans from tweet text
     text_lower = tweet_text.lower() if tweet_text else ""
     if "100k" in text_lower:
         plans_to_try = ["100k"]
-    elif "50k" in text_lower:
+    elif "50k" in text_lower and "25k" not in text_lower:
         plans_to_try = ["50k"]
-    elif "25k" in text_lower:
+    elif "25k" in text_lower and "50k" not in text_lower:
         plans_to_try = ["25k"]
-        
-    # 2. Trigger high-speed Direct HTTP API Checkout for candidate plans in the background
+    else:
+        # Try both plans in parallel — covers any ambiguous tweet
+        plans_to_try = ["50k", "25k"]
+
+    logger.info(f"🎯 Plans to try: {plans_to_try}")
+
+    # 1. PRIMARY: Direct checkout API — fastest path, runs for ALL plans in parallel
+    checkout_tasks = []
     for plan in plans_to_try:
-        asyncio.create_task(claimer.checkout_all_accounts(code, plan))
-        
-    # 3. Trigger Playwright Auto-Checkout as a backup if supported locally
+        checkout_tasks.append(asyncio.create_task(claimer.checkout_all_accounts(code, plan)))
+
+    # 2. BACKUP: Secret-code redemption API (in case checkout isn't the right endpoint)
+    redemption_task = asyncio.create_task(claimer.claim_all_accounts(code))
+
+    # 3. PLAYWRIGHT: browser-based checkout if available (best-effort)
     if PLAYWRIGHT_AVAILABLE:
         try:
             from checkout_buyer import purchase_evaluation_account
             asyncio.create_task(purchase_evaluation_account(code))
         except Exception as e:
-            logger.error(f"⚠️ Failed to spawn Playwright auto-checkout: {e}")
-            
-    # 4. Trigger the standard direct API Secret Claim just in case
-    results = await claimer.claim_all_accounts(code)
-    
-    # Check if any standard secret code claim succeeded
-    for res in results:
+            logger.debug(f"Playwright not available: {e}")
+
+    # Wait for redemption results and update counter
+    redemption_results = await redemption_task
+    for res in (redemption_results or []):
         if isinstance(res, dict) and res.get("success"):
             successful_claims += 1
-            logger.info(f"🎉 SUCCESSFUL API CLAIM ({successful_claims}/{MAX_CLAIMS})!")
-            if successful_claims >= MAX_CLAIMS:
-                logger.info("🏆 Target of 2 successful claims reached! Shutting down X Monitor.")
-                sys.exit(0)
+            logger.info(f"🎉 REDEMPTION CLAIM SUCCESS ({successful_claims}/{MAX_CLAIMS})!")
+
+    # Also track checkout successes
+    for task in checkout_tasks:
+        try:
+            checkout_results = await task
+            for res in (checkout_results or []):
+                if isinstance(res, dict) and res.get("success"):
+                    successful_claims += 1
+                    logger.info(f"🎉 CHECKOUT SUCCESS ({successful_claims}/{MAX_CLAIMS}) — Plan: {res.get('plan', '?')}!")
+        except Exception:
+            pass
+
+    if successful_claims >= MAX_CLAIMS:
+        logger.info("🏆 Target claims reached! Shutting down.")
+        sys.exit(0)
 
 async def main():
     errors = config.validate_config()
