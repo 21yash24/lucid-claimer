@@ -9,6 +9,7 @@ import re
 import os
 import logging
 import ssl
+import subprocess
 
 try:
     import easyocr
@@ -140,6 +141,18 @@ class OcrSolver:
         Removes red scribbles (if opencv is available), performs OCR on the image, and returns all extracted text.
         """
         try:
+            # 1. Try macOS Native Neural Engine Vision OCR if on Mac
+            binary_path = os.path.join(os.path.dirname(__file__), "mac_vision_ocr")
+            if os.path.exists(binary_path):
+                try:
+                    res = subprocess.run([binary_path, img_path], capture_output=True, text=True, timeout=3)
+                    if res.returncode == 0 and res.stdout.strip():
+                        vision_text = res.stdout.strip()
+                        logger.info(f"🍏 [Apple Neural Engine Vision OCR] Extracted: {vision_text!r}")
+                        return vision_text
+                except Exception as e:
+                    logger.debug(f"Native Vision OCR error: {e}")
+
             if CV2_AVAILABLE:
                 # Preprocess the image with OpenCV filters
                 processed_img = self.filter_red_scribbles(img_path, preprocessed_path)
