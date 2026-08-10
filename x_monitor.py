@@ -179,7 +179,7 @@ class XMonitor:
                                 logger.info(f"⚡ Codes spotted in tweet from @{username}: {codes}. Dispatching claims...")
                                 for code in codes:
                                     # Trigger redemption callback asynchronously
-                                    asyncio.create_task(self.claim_callback(code))
+                                    asyncio.create_task(self.claim_callback(code, tweet.text))
                                     
                     is_first_check = False
                 except Exception as e:

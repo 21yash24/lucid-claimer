@@ -126,8 +126,8 @@ class OcrSolver:
                         for y in range(height):
                             for x in range(width):
                                 r, g, b = pixels[x, y]
-                                # Red is high, Green and Blue are relatively low
-                                if r > 90 and g < 130 and b < 130 and r - g > 35 and r - b > 35:
+                                # Pure red scribble line is dominant in red, but low in green/blue
+                                if r > 70 and g < 90 and b < 90 and r - g > 40 and r - b > 40:
                                     pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
                                     
                         # 2. Convert to grayscale

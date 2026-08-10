@@ -189,6 +189,65 @@ class MultiAccountClaimer:
         logger.info(f"🏁 Batch claim finished in {total_elapsed_ms:.1f}ms for all accounts.")
         return results
 
+    async def checkout_all_accounts(self, code: str, plan_id: str = "50k"):
+        """
+        Performs direct API checkout utilizing 100% off coupon code for all accounts in parallel.
+        """
+        if not self.account_tokens and not self.credentials:
+            logger.error("No account tokens or login credentials configured to checkout plans!")
+            return []
+
+        logger.info(f"🛒 Direct API Checkout triggered for plan '{plan_id}' using coupon '{code}'...")
+        start_batch = time.perf_counter()
+
+        tasks = [
+            self.checkout_single_account(idx, token, code, plan_id)
+            for idx, token in enumerate(self.account_tokens)
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        total_elapsed_ms = (time.perf_counter() - start_batch) * 1000
+        logger.info(f"🏁 Batch checkout finished in {total_elapsed_ms:.1f}ms for all accounts.")
+        return results
+
+    async def checkout_single_account(self, account_index: int, token: str, code: str, plan_id: str) -> Dict:
+        """
+        Submits a discount/free coupon code directly to the Stripe checkout-session API endpoint.
+        """
+        if not token:
+            if await self.refresh_token(account_index):
+                token = self.account_tokens[account_index]
+            else:
+                return {"account": account_index + 1, "success": False, "error": "No token available"}
+
+        url = "https://dash.lucidtrading.com/api/stripe/checkout-session"
+        auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
+        headers = {
+            "Authorization": auth_header,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "Origin": "https://dash.lucidtrading.com",
+            "Referer": "https://dash.lucidtrading.com/",
+            "Cookie": config.BROWSER_COOKIE
+        }
+        payload = {
+            "planId": plan_id,
+            "couponCode": code
+        }
+        
+        try:
+            async with self.session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                text = await resp.text()
+                if resp.status in (200, 201, 204):
+                    logger.info(f"🎉 [Account #{account_index + 1}] CHECKOUT SUCCESS FOR PLAN '{plan_id}'! Code: {code}")
+                    return {"account": account_index + 1, "success": True, "status": resp.status}
+                else:
+                    logger.warning(f"❌ [Account #{account_index + 1}] Checkout failed (HTTP {resp.status}) for plan '{plan_id}': {text[:150]}")
+                    return {"account": account_index + 1, "success": False, "status": resp.status, "error": text}
+        except Exception as e:
+            logger.error(f"⚠️ [Account #{account_index + 1}] Exception during checkout for plan '{plan_id}': {e}")
+            return {"account": account_index + 1, "success": False, "error": str(e)}
+
     async def close(self):
         if self.session:
             await self.session.close()
