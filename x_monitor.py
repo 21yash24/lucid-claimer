@@ -117,6 +117,7 @@ class XMonitor:
         async with aiohttp.ClientSession(connector=connector) as session:
             poll_count = 0
             user = None
+            is_first_check = True
             while True:
                 poll_count += 1
                 if poll_count % 5 == 1:
@@ -136,11 +137,9 @@ class XMonitor:
                         if tweet.id in self.seen_tweets:
                             continue
                             
-                        # If seen_tweets is empty, this is the first poll. Populate but don't claim past tweets.
-                        is_first_poll = len(self.seen_tweets) == 0
                         self.seen_tweets.add(tweet.id)
                         
-                        if is_first_poll:
+                        if is_first_check:
                             continue
                             
                         # Print large warning alert
@@ -168,6 +167,7 @@ class XMonitor:
                                 # Trigger redemption callback asynchronously
                                 asyncio.create_task(self.claim_callback(code))
                                 
+                    is_first_check = False
                 except Exception as e:
                     logger.error(f"⚠️ Error polling X timeline: {e}")
                     # If we get rate limited (429), back off for 90 seconds to reset rate limit window
