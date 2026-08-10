@@ -126,8 +126,8 @@ class OcrSolver:
                         for y in range(height):
                             for x in range(width):
                                 r, g, b = pixels[x, y]
-                                # Pure red scribble line is dominant in red, but low in green/blue
-                                if r > 70 and g < 90 and b < 90 and r - g > 40 and r - b > 40:
+                                # Red is high, Green and Blue are low, and red is clearly dominant
+                                if r > 55 and g < 75 and b < 75 and (r - g) > 25 and (r - b) > 25:
                                     pixels[x, y] = (15, 15, 15)  # Replace with background dark gray
                                     
                         # 2. Convert to grayscale
@@ -139,12 +139,17 @@ class OcrSolver:
                         # 4. Invert (Tesseract prefers black text on white background)
                         inverted = ImageOps.invert(thresh)
                         
-                        # 4b. Vertical dilation to bridge horizontal gaps in letters (1x3 vertical min-filter)
+                        # 4b. Vertical & Horizontal dilation to bridge gaps (1x3 vertical, 1x2 horizontal min-filter)
                         from PIL import ImageChops
                         shifted_up = ImageChops.offset(inverted, 0, -1)
                         shifted_down = ImageChops.offset(inverted, 0, 1)
+                        shifted_left = ImageChops.offset(inverted, -1, 0)
+                        shifted_right = ImageChops.offset(inverted, 1, 0)
+                        
                         temp = ImageChops.darker(inverted, shifted_up)
-                        eroded = ImageChops.darker(temp, shifted_down)
+                        temp = ImageChops.darker(temp, shifted_down)
+                        temp = ImageChops.darker(temp, shifted_left)
+                        eroded = ImageChops.darker(temp, shifted_right)
                         
                         # 5. Resize by 3.0x using BICUBIC for clean anti-aliased larger text
                         try:
