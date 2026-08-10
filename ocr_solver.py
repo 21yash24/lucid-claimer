@@ -1,6 +1,5 @@
 import re
 import os
-import json
 import logging
 import ssl
 import subprocess
@@ -30,7 +29,6 @@ ssl._create_default_https_context = ssl._create_unverified_context
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("OCRSolver")
 
-# Mac Vision OCR binary path
 _BINARY = None
 def _get_binary():
     global _BINARY
@@ -53,12 +51,14 @@ class OcrSolver:
             logger.warning("⚠️ No OCR library found!")
 
     # ──────────────────────────────────────────────────────
-    # STEP 1: Remove red scribble lines via inpainting
+    # STEP 1: White-Only Text Extraction Filter
     # ──────────────────────────────────────────────────────
-    def _remove_red_lines(self, img_path: str, output_path: str) -> str:
+    def extract_white_text_image(self, img_path: str, output_path: str) -> str:
         """
-        Removes red X / diagonal scribbles from tweet image using OpenCV inpainting.
-        Returns path to cleaned image, or original path if OpenCV unavailable.
+        Extracts only bright white text pixels (R>160, G>160, B>160).
+        Since coupon codes on card drops are bold bright white text, this filter
+        completely strips out red/colored scribbles and dark background graphics,
+        leaving crisp, unbroken black text on a clean white canvas for OCR.
         """
         if not CV2_AVAILABLE:
             return img_path
@@ -67,23 +67,20 @@ class OcrSolver:
         if img is None:
             return img_path
 
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        # Red occupies two hue bands (saturation >= 50, value >= 50)
-        m1 = cv2.inRange(hsv, np.array([0,    50, 50]), np.array([12,  255, 255]))
-        m2 = cv2.inRange(hsv, np.array([160,  50, 50]), np.array([180, 255, 255]))
-        red_mask = cv2.bitwise_or(m1, m2)
+        b, g, r = cv2.split(img)
+        white_mask = (r > 160) & (g > 160) & (b > 160)
 
-        # Expand mask to cover anti-aliased stroke edges
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        red_mask = cv2.dilate(red_mask, kernel, iterations=2)
+        # Create crisp binary image: white text on black background
+        result = np.zeros_like(img)
+        result[white_mask] = [255, 255, 255]
 
-        # Inpaint fills the deleted area using surrounding pixels
-        cleaned = cv2.inpaint(img, red_mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
-        cv2.imwrite(output_path, cleaned)
+        # Invert to black text on white background (optimal for Vision framework)
+        inverted = cv2.bitwise_not(result)
+        cv2.imwrite(output_path, inverted)
         return output_path
 
     # ──────────────────────────────────────────────────────
-    # STEP 2: Run Apple Vision OCR on an image path
+    # STEP 2: Run Apple Vision OCR
     # ──────────────────────────────────────────────────────
     def _run_vision_ocr(self, img_path: str) -> str:
         binary = _get_binary()
@@ -101,40 +98,29 @@ class OcrSolver:
         return ""
 
     # ──────────────────────────────────────────────────────
-    # STEP 3: Reconstruct code from fragmented OCR output
+    # STEP 3: Reconstruct code from OCR passes
     # ──────────────────────────────────────────────────────
     def _reconstruct_code_from_fragments(self, raw_ocr: str) -> str | None:
         """
-        The red X scribble cuts the bold code text into 2-3 fragments on the first OCR line.
-        E.g. raw OCR gives:
-            '41N0\nYPIUQ\nLucidPro Eval 50k\n100% off\nCopy'
-
-        Strategy: collect all uppercase+digit tokens from the TOP of the OCR output
-        (stop at first UI-noise line), then concatenate = the full coupon code.
-
-        Only uses the FIRST block of text (raw pass) — before any '---' separator.
+        Collects code tokens from top of OCR lines before UI noise (Lucid/100%/Copy/Eval).
         """
-        # Use only the raw OCR block (before ---)
-        first_block = raw_ocr.split("---")[0] if "---" in raw_ocr else raw_ocr
-        lines = [l.strip() for l in first_block.splitlines() if l.strip()]
+        lines = [l.strip() for l in raw_ocr.splitlines() if l.strip()]
 
         code_fragments = []
         for line in lines:
             upper = line.upper()
-            # Stop at first obvious UI noise line
             if any(noise in upper for noise in [
                 "LUCID", "EVAL", "100%", "COPY", "OFF", "50K", "150K",
                 "LUCIDPRO", "PROCENT", "COUPON", "CART", "CHECKOUT",
                 "PRO EVAL", "% OFF"
             ]):
                 break
-            # Strip non-alphanumeric and collect
             tokens = re.findall(r'[A-Z0-9]+', upper)
             code_fragments.extend(tokens)
 
         if code_fragments:
             candidate = "".join(code_fragments)
-            logger.info(f"🔧 Code fragments from raw OCR: {code_fragments} → '{candidate}'")
+            logger.info(f"🔧 Extracted code candidate: {code_fragments} → '{candidate}'")
             return candidate
         return None
 
@@ -143,48 +129,27 @@ class OcrSolver:
     # ──────────────────────────────────────────────────────
     def extract_text_from_image(self, img_path: str, preprocessed_path: str = None) -> str:
         """
-        Full pipeline:
-          1. Remove red scribble lines from image (inpainting).
-          2. Run Apple Vision OCR on BOTH cleaned and raw image.
-          3. Return raw OCR text first (most accurate letter recognition),
-             then cleaned OCR text separated by a sentinel line.
+        Full OCR Pipeline:
+          1. Apply White-Only Text Filter (strips all red scribbles instantly).
+          2. Run Apple Vision OCR on white-only filter image.
+          3. Also run raw pass as backup.
         """
-        clean_path = preprocessed_path or img_path.replace(".jpg", "_nored.jpg")
-        cleaned_img = self._remove_red_lines(img_path, clean_path)
+        clean_path = preprocessed_path or img_path.replace(".jpg", "_whiteonly.jpg")
+        cleaned_img = self.extract_white_text_image(img_path, clean_path)
 
-        raw_text     = self._run_vision_ocr(img_path)
-        cleaned_text = self._run_vision_ocr(cleaned_img)
+        white_text = self._run_vision_ocr(cleaned_img)
+        raw_text   = self._run_vision_ocr(img_path)
 
+        if white_text:
+            logger.info(f"🍏 [Vision OCR White-Filter] → {white_text!r}")
         if raw_text:
             logger.info(f"🍏 [Vision OCR Raw] → {raw_text!r}")
-        if cleaned_text:
-            logger.info(f"🍏 [Vision OCR Cleaned] → {cleaned_text!r}")
 
-        # Return raw first so reconstruction prioritises it
         parts = []
+        if white_text:
+            parts.append(white_text)
         if raw_text:
             parts.append(raw_text)
-        if cleaned_text:
-            parts.append(cleaned_text)
-
-        if not parts:
-            # Fallback to EasyOCR/Tesseract
-            if EASYOCR_AVAILABLE and self.reader:
-                try:
-                    results = self.reader.readtext(
-                        cleaned_img, detail=0,
-                        allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                    )
-                    parts.append(" ".join(results))
-                except Exception as e:
-                    logger.debug(f"EasyOCR error: {e}")
-            elif PYTESSERACT_AVAILABLE:
-                try:
-                    pil = Image.open(cleaned_img)
-                    cfg = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-                    parts.append(pytesseract.image_to_string(pil, config=cfg).strip())
-                except Exception as e:
-                    logger.debug(f"Tesseract error: {e}")
 
         combined = "\n---\n".join(parts)
         logger.info(f"Combined OCR output: {combined!r}")
@@ -195,37 +160,24 @@ class OcrSolver:
     # ──────────────────────────────────────────────────────
     def find_lucid_codes(self, text: str) -> list:
         """
-        Extracts a Lucid Trading coupon code from OCR text.
-
-        Priority:
-          1. Try to reconstruct the code from top-line fragments
-             (handles red-X split codes like 41N0 + YPIUQ → 41N0HYPEQ50 etc.)
-          2. Fall back to parser extraction for clean / text-based codes.
-
-        The reconstructed code must:
-          - Be 6-25 characters
-          - Contain BOTH at least one letter AND at least one digit
+        Extracts valid coupon code from OCR output.
+        Prioritizes the White-Filter OCR pass first.
         """
-        # Try reconstruction first — use RAW image OCR since inpainting can distort letters
         if text:
-            reconstructed = self._reconstruct_code_from_fragments(text)
+            first_block = text.split("---")[0] if "---" in text else text
+            reconstructed = self._reconstruct_code_from_fragments(first_block)
             if reconstructed:
                 has_letter = any(c.isalpha() for c in reconstructed)
                 if has_letter and 4 <= len(reconstructed) <= 25:
-                    logger.info(f"✅ Using reconstructed code: '{reconstructed}'")
+                    logger.info(f"✅ Extracted code: '{reconstructed}'")
                     return [reconstructed]
 
-        # Fallback: standard parser extraction
         from parser import extract_all_giveaway_codes
         raw = extract_all_giveaway_codes(text)
-
-        # Filter: prefer codes with BOTH letters AND digits, 6+ chars
-        strong = [c for c in raw if any(ch.isalpha() for ch in c)
-                                 and any(ch.isdigit() for ch in c)
-                                 and len(c) >= 6]
+        strong = [c for c in raw if any(ch.isalpha() for ch in c) and len(c) >= 4]
         if strong:
             strong.sort(key=len, reverse=True)
-            logger.info(f"✅ Strong code candidates: {strong}")
-            return strong
+            logger.info(f"✅ Fallback code candidate: {strong[0]}")
+            return [strong[0]]
 
         return raw
