@@ -42,20 +42,29 @@ claimer = MultiAccountClaimer(
 )
 
 def paste_code_to_frontmost_chrome(code: str):
-    """Activates Google Chrome on macOS, pastes the code, and presses Enter."""
+    """
+    Activates Google Chrome, pastes the code into the Apply Coupon Code field,
+    then presses Tab to move focus to the Apply Coupon button, then Enter to click it.
+    Matches the exact Lucid Trading 150K checkout modal UI.
+    """
     try:
         subprocess.run(['pbcopy'], input=code.encode('utf-8'))
         applescript = '''
         tell application "Google Chrome" to activate
-        delay 0.1
+        delay 0.15
         tell application "System Events"
+            -- Paste code into "Apply Coupon Code" input field
             keystroke "v" using {command down}
+            delay 0.2
+            -- Tab to focus the green "Apply Coupon" button
+            key code 48
             delay 0.1
+            -- Press Enter to click Apply Coupon
             key code 36
         end tell
         '''
         subprocess.run(['osascript', '-e', applescript], capture_output=True)
-        logger.info(f"🖱️ Auto-pasted '{code}' into frontmost Chrome window!")
+        logger.info(f"🖱️ Pasted '{code}' → Tabbed to Apply Coupon → Pressed Enter in Chrome!")
     except Exception as e:
         logger.debug(f"Chrome auto-paste error: {e}")
 
