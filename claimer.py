@@ -258,11 +258,20 @@ class MultiAccountClaimer:
                         await asyncio.sleep(1.5)
                         continue
                         
-                    if resp.status in (200, 201, 204):
-                        logger.info(f"🎉 [Account #{account_index + 1}] CHECKOUT SUCCESS FOR PLAN '{plan_id}'! Code: {code}")
-                        return {"account": account_index + 1, "success": True, "status": resp.status}
+                    if resp.status in (200, 201):
+                        body_data = {}
+                        try:
+                            body_data = await resp.json(content_type=None) if text.strip() else {}
+                        except Exception:
+                            body_data = {"_raw": text}
+                        logger.info(f"🎉 [Account #{account_index + 1}] REAL CHECKOUT SUCCESS (HTTP {resp.status}) plan='{plan_id}' code='{code}': {body_data}")
+                        return {"account": account_index + 1, "success": True, "status": resp.status, "plan": plan_id}
+                    elif resp.status == 204:
+                        # 204 = server accepted the POST but did NOTHING — coupon/plan invalid or no event
+                        logger.warning(f"⚠️ [Account #{account_index + 1}] Checkout returned 204 (empty/no-op) for plan '{plan_id}' — NOT a real success.")
+                        return {"account": account_index + 1, "success": False, "status": 204, "error": "204 no-op"}
                     else:
-                        logger.warning(f"❌ [Account #{account_index + 1}] Checkout failed (HTTP {resp.status}) for plan '{plan_id}': {text[:150]}")
+                        logger.warning(f"❌ [Account #{account_index + 1}] Checkout failed (HTTP {resp.status}) plan='{plan_id}': {text[:150]}")
                         return {"account": account_index + 1, "success": False, "status": resp.status, "error": text}
             except Exception as e:
                 if attempt < max_attempts:

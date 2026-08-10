@@ -229,17 +229,19 @@ class OcrSolver:
         upper_text = clean_text.upper()
         found = set()
 
-        # Pattern 1: Mixed alphanumeric (must contain at least 1 digit AND 1 letter), 4-16 chars
-        for m in re.finditer(r'\b([A-Z0-9]{4,16})\b', upper_text):
+        # Pattern 1: Mixed alphanumeric — must have BOTH letters AND at least 2 digits, 5-16 chars
+        # Real Lucid codes: LIPE50100, LUC25K2024, LPOE5O1OY etc.
+        for m in re.finditer(r'\b([A-Z0-9]{5,16})\b', upper_text):
             token = m.group(1)
-            has_digit  = any(c.isdigit() for c in token)
-            has_letter = any(c.isalpha() for c in token)
-            if has_digit and has_letter:
+            digit_count  = sum(c.isdigit() for c in token)
+            letter_count = sum(c.isalpha() for c in token)
+            # Require at least 2 digits AND at least 2 letters to filter noise
+            if digit_count >= 2 and letter_count >= 2:
                 found.add(token)
 
-        # Pattern 2: Pure uppercase letter codes (4-12 chars), excluding noise words
-        # These are promo codes like WAWA, FREEEVAL, LUCIDPRO etc.
-        for m in re.finditer(r'\b([A-Z]{4,12})\b', upper_text):
+        # Pattern 2: Pure uppercase letter promo codes — minimum 6 chars to avoid noise words
+        # e.g. WAWA(4) too short now, FREEEVAL, LUCIDPRO ok
+        for m in re.finditer(r'\b([A-Z]{6,12})\b', upper_text):
             token = m.group(1)
             if token not in NOISE_WORDS:
                 found.add(token)
