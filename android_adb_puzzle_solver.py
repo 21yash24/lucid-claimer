@@ -255,8 +255,10 @@ def main():
             in_solving_loop = True
             
             next_guess = "".join(random.choices(CHAR_SET, k=5))
+            tested_guesses = set()
             
             for round_num in range(1, 15):
+                tested_guesses.add(next_guess)
                 logger.info(f"👉 [Round {round_num}] Auto-submitting guess '{next_guess}' to phone...")
                 
                 inp_x = input_coords[0] if input_coords else 540
@@ -271,9 +273,10 @@ def main():
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                time.sleep(0.3)
+                # Wait 0.4s for feedback animation to settle on screen
+                time.sleep(0.4)
                 
-                # 4. Capture screenshot after submission & read feedback
+                # Capture screenshot after submission & read feedback
                 capture_phone_screenshot(shot_path)
                 post_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
@@ -292,11 +295,24 @@ def main():
                     if (next_guess, correct, wrong) not in solver.history:
                         solver.history.append((next_guess, correct, wrong))
                         
-                # 5. Calculate next optimal backtrack candidate
+                # Calculate next optimal backtrack candidate
                 candidate = solver.find_candidate_backtrack(solver.history)
-                next_guess = candidate or "".join(random.choices(CHAR_SET, k=5))
+                
+                # Ensure candidate is never a previously tested guess
+                if not candidate or candidate in tested_guesses:
+                    # Generate random candidate consistent with history
+                    chars = list(CHAR_SET)
+                    for _ in range(50000):
+                        rand_cand = "".join(random.choices(chars, k=5))
+                        if rand_cand not in tested_guesses and solver.is_consistent(rand_cand):
+                            candidate = rand_cand
+                            break
+                    if not candidate or candidate in tested_guesses:
+                        candidate = "".join(random.choices(chars, k=5))
+                        
+                next_guess = candidate
                 logger.info(f"⚡ Calculated next optimal guess: '{next_guess}'")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 
         elif not ("Crack the Code" in ocr_text or "5-digit code" in ocr_text):
             in_solving_loop = False
