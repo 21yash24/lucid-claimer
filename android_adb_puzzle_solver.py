@@ -276,13 +276,16 @@ def main():
                     
                 correct = 0
                 wrong = 0
-                match = re.search(r"(\d+)\s*correct spot[^\d]*(\d+)\s*wrong spot", post_text, re.IGNORECASE)
+                match = re.search(r"(\d+)\s*correct\s*spot[^\d]*(\d+)\s*wrong\s*spot", post_text, re.IGNORECASE)
+                if not match:
+                    match = re.search(r"(\d+)\s*correct[^\d]*(\d+)\s*wrong", post_text, re.IGNORECASE)
+                    
                 if match:
                     correct = int(match.group(1))
                     wrong = int(match.group(2))
                     logger.info(f"📊 Extracted screen feedback: {correct} correct, {wrong} wrong for '{next_guess}'")
                 else:
-                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'. Assuming 0/0.")
+                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'. Full OCR Text snippet: {repr(post_text[:150])}")
                     
                 # Calculate next optimal guess using Block Probing + Permutation Elimination
                 next_guess = solver.get_next_guess(next_guess, correct, wrong)
