@@ -224,10 +224,16 @@ def main():
                 round_num += 1
                 logger.info(f"👉 [Round {round_num}] Submitting guess '{next_guess}' to phone...")
                 
-                sub_x = submit_coords[0] if submit_coords else 540
-                sub_y = submit_coords[1] if submit_coords else 1030
+                # Re-scan OCR to get fresh dynamic coordinates for Input box & Submit button
+                capture_phone_screenshot(shot_path)
+                ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
-                # Execute clear, type, close keyboard (keyevent 4), and tap submit in ONE BATCHED COMMAND
+                inp_x = input_coords[0] if input_coords else 540
+                inp_y = input_coords[1] if input_coords else 1270
+                sub_x = submit_coords[0] if submit_coords else 540
+                sub_y = submit_coords[1] if submit_coords else 1690
+                
+                # Execute clear, type, close keyboard (keyevent 4), and tap submit
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
                     f"input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 4 && input tap {sub_x} {sub_y}"
