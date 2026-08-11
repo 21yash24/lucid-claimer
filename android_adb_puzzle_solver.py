@@ -27,34 +27,51 @@ logger = logging.getLogger("ADBPuzzleSolver")
 
 CHAR_SET = string.digits + string.ascii_uppercase  # 0-9 and A-Z
 
-# Determine ADB binary path
+# Determine ADB binary path & target device
 ADB_BIN = "adb"
 local_adb = os.path.join(os.path.dirname(__file__), "platform-tools", "adb")
 if os.path.exists(local_adb):
     ADB_BIN = local_adb
 
-def check_adb_connected() -> bool:
-    """Checks if an Android device is connected via ADB."""
+TARGET_DEVICE = None
+
+def get_adb_device() -> Optional[str]:
+    """Finds active connected ADB device ID."""
+    global TARGET_DEVICE
     try:
         res = subprocess.run([ADB_BIN, "devices"], capture_output=True, text=True, check=True)
-        lines = [line for line in res.stdout.strip().split("\n") if line and not line.startswith("List of devices")]
+        lines = [line.split()[0] for line in res.stdout.strip().split("\n") if line and not line.startswith("List of devices") and "device" in line]
         if lines:
-            device_id = lines[0].split()[0]
-            logger.info(f"📱 Connected to Android Device via ADB: {device_id}")
-            return True
-        else:
-            logger.warning("⚠️ No Android device detected via ADB! Please check USB cable & enable USB Debugging.")
-            return False
+            TARGET_DEVICE = lines[0]
+            return TARGET_DEVICE
     except Exception as e:
-        logger.error(f"❌ ADB binary check error: {e}")
+        logger.error(f"❌ ADB devices error: {e}")
+    return None
+
+def check_adb_connected() -> bool:
+    """Checks if an Android device is connected via ADB."""
+    dev = get_adb_device()
+    if dev:
+        logger.info(f"📱 Connected to Android Device via ADB: {dev}")
+        return True
+    else:
+        logger.warning("⚠️ No Android device detected via ADB! Please check USB cable / Wireless ADB.")
         return False
+
+def adb_cmd_prefix() -> List[str]:
+    """Returns ADB command base list including -s TARGET_DEVICE if available."""
+    if TARGET_DEVICE:
+        return [ADB_BIN, "-s", TARGET_DEVICE]
+    return [ADB_BIN]
 
 def capture_phone_screenshot(save_path: str) -> bool:
     """Captures screenshot directly from Android phone via ADB screencap and pull."""
     try:
         remote_path = "/sdcard/lucid_screen.png"
-        subprocess.run([ADB_BIN, "shell", "screencap", "-p", remote_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run([ADB_BIN, "pull", remote_path, save_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cmd1 = adb_cmd_prefix() + ["shell", "screencap", "-p", remote_path]
+        cmd2 = adb_cmd_prefix() + ["pull", remote_path, save_path]
+        subprocess.run(cmd1, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd2, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except Exception as e:
         logger.error(f"⚠️ Screencapture error: {e}")
@@ -63,14 +80,16 @@ def capture_phone_screenshot(save_path: str) -> bool:
 def adb_type_text(text: str):
     """Types text directly into the active input box on the Android phone."""
     try:
-        subprocess.run([ADB_BIN, "shell", "input", "text", text], check=True)
+        cmd = adb_cmd_prefix() + ["shell", "input", "text", text]
+        subprocess.run(cmd, check=True)
     except Exception as e:
         logger.error(f"⚠️ ADB typing error: {e}")
 
 def adb_tap(x: int, y: int):
     """Taps specific (X, Y) coordinates on the Android phone screen."""
     try:
-        subprocess.run([ADB_BIN, "shell", "input", "tap", str(x), str(y)], check=True)
+        cmd = adb_cmd_prefix() + ["shell", "input", "tap", str(x), str(y)]
+        subprocess.run(cmd, check=True)
     except Exception as e:
         logger.error(f"⚠️ ADB tap error: {e}")
 
@@ -267,8 +286,8 @@ def main():
                 sub_y = submit_coords[1] if submit_coords else 1690
                 
                 # Execute focus, clear, type, hide keyboard, & tap submit in ONE BATCHED COMMAND
-                batch_cmd = [
-                    ADB_BIN, "shell",
+                batch_cmd = adb_cmd_prefix() + [
+                    "shell",
                     f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
