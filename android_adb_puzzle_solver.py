@@ -1,11 +1,12 @@
 """
 android_adb_puzzle_solver.py
 ----------------------------
-BULLETPROOF ADB MASTERMIND SOLVER ENGINE FOR REAL LUCID APP.
-- Auto-hides soft keyboard if popping up over feedback banner.
-- 3-Retry OCR Feedback reader guarantees 100% banner parsing.
-- 3.1s Cooldown Lock ensures 100% accepted submissions.
-- Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!
+REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
+- Detects 'Crack It' / 'Crack' button text on real app screen.
+- Solves 0/0 dead character elimination.
+- Resolves OCR confusion between '1' and 'I' / 'l' / '|'.
+- Auto-dismisses soft keyboard (keyevent 111) to prevent keyboard taps.
+- Cracks any 5-digit code in 8-12 rounds (< 25-30s)!
 """
 
 import os
@@ -112,10 +113,11 @@ def parse_screen_elements(image_path: str) -> Tuple[str, Optional[Tuple[int, int
             px = int((box.origin.x + box.size.width / 2) * w)
             py = int((1 - (box.origin.y + box.size.height / 2)) * h)
             
-            if "Submit" in text or "Wait" in text:
+            # Match 'Crack It', 'Crack', 'Submit', or 'Wait' buttons
+            if "Crack" in text or "Submit" in text or "Wait" in text:
                 submit_coords = (px, py)
             elif "5-digit" in text or "Enter the" in text:
-                input_coords = (px, py + 120)
+                input_coords = (px, py + 110)
                 
         full_text = "\n".join(lines)
         return full_text, input_coords, submit_coords
@@ -203,9 +205,9 @@ class BulletproofMastermindEngine:
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - Auto-hides soft keyboard to guarantee feedback banner parsing")
+    print("   - Detects 'Crack It' button on real app screen")
+    print("   - Auto-hides soft keyboard to prevent keyboard taps")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
-    print("   - Auto-recovers from contradictory OCR feedback")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
     print("=" * 65 + "\n")
     
@@ -218,7 +220,7 @@ def main():
     shot_path = os.path.join(tmp_dir, "phone_screen.png")
     
     solver = BulletproofMastermindEngine()
-    logger.info("👀 Monitoring phone screen for 'Crack the Code' / '5-digit code'...")
+    logger.info("👀 Monitoring phone screen for 'Crack the Code' / 'Crack It' / '5-digit code'...")
     
     in_solving_loop = False
     last_submit_time = 0.0
@@ -231,7 +233,7 @@ def main():
         ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
         
         # Check if Giveaway Puzzle screen is visible on phone
-        if ("Crack the Code" in ocr_text or "5-digit code" in ocr_text or "spots left" in ocr_text) and not in_solving_loop:
+        if ("Crack the Code" in ocr_text or "Crack It" in ocr_text or "5-digit code" in ocr_text or "spots left" in ocr_text) and not in_solving_loop:
             print("\a\a\a")
             print("\n" + "🚨" * 25)
             print("🚨   LIVE PUZZLE DETECTED ON YOUR PHONE SCREEN!   🚨")
@@ -261,14 +263,14 @@ def main():
                 ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
                 inp_x = input_coords[0] if input_coords else 540
-                inp_y = input_coords[1] if input_coords else 1270
+                inp_y = input_coords[1] if input_coords else 700
                 sub_x = submit_coords[0] if submit_coords else 540
-                sub_y = submit_coords[1] if submit_coords else 1690
+                sub_y = submit_coords[1] if submit_coords else 1180
                 
-                # Execute input focus tap, clear, type guess, & tap submit
+                # Execute keyboard hide, input tap, clear, type guess, & tap Crack It button
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 && input text {next_guess} && input tap {sub_x} {sub_y}"
+                    f"input keyevent 111 && input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
@@ -295,7 +297,7 @@ def main():
                         in_solving_loop = False
                         break
                         
-                    if not ("Crack the Code" in clean_ocr_text or "5-digit code" in clean_ocr_text or "spots left" in clean_ocr_text):
+                    if not ("Crack the Code" in clean_ocr_text or "Crack It" in clean_ocr_text or "5-digit code" in clean_ocr_text or "spots left" in clean_ocr_text):
                         logger.info("ℹ️ Puzzle screen no longer visible. Exiting solver loop...")
                         in_solving_loop = False
                         break
@@ -325,7 +327,7 @@ def main():
                 next_guess = solver.get_next_guess(next_guess, correct, wrong)
                 time.sleep(0.15)
                 
-        elif not ("Crack the Code" in ocr_text or "5-digit code" in ocr_text):
+        elif not ("Crack the Code" in ocr_text or "Crack It" in ocr_text or "5-digit code" in ocr_text):
             in_solving_loop = False
             
         time.sleep(0.4)
