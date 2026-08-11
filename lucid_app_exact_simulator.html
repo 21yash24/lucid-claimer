@@ -381,6 +381,21 @@
             });
         });
 
+        // Instant reset via Escape key (Android KEYCODE_ESCAPE = 111)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                resetBoxes();
+            }
+        });
+
+        // Ensure Box 1 receives focus on any ADB touch event
+        window.addEventListener('pointerdown', (e) => {
+            let active = document.activeElement;
+            if (!boxes.includes(active)) {
+                boxes[0].focus();
+            }
+        });
+
         function calculateFeedback(cand, target) {
             let correct = 0;
             let c_unmatched = [];
