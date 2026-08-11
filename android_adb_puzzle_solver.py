@@ -233,10 +233,10 @@ def main():
                 sub_x = submit_coords[0] if submit_coords else 540
                 sub_y = submit_coords[1] if submit_coords else 1690
                 
-                # Execute clear, type, close keyboard (keyevent 4), and tap submit
+                # Execute input focus tap, clear, type, close keyboard (keyevent 4), and tap submit in ONE BATCHED COMMAND
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 4 && input tap {sub_x} {sub_y}"
+                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 4 && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
