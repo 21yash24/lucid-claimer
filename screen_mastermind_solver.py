@@ -24,16 +24,23 @@ logger = logging.getLogger("ScreenSolver")
 
 CHAR_SET = string.digits + string.ascii_uppercase  # 0-9 and A-Z
 
-def get_screen_ocr_text(crop_box=None) -> str:
+from PIL import ImageGrab
+
+def get_screen_ocr_text() -> str:
     """
-    Captures screenshot of Mac display and runs Apple Vision OCR.
+    Captures screenshot of Mac display using PIL.ImageGrab and runs Apple Vision OCR.
     Returns extracted text string.
     """
     screenshot_path = os.path.join(os.path.dirname(__file__), "tmp_images", "screen_ocr_tmp.png")
     os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
     
-    # Take screenshot
-    subprocess.run(["screencapture", "-x", screenshot_path], check=True)
+    # Take screenshot using PIL ImageGrab
+    try:
+        img = ImageGrab.grab()
+        img.save(screenshot_path)
+    except Exception as e:
+        logger.error(f"⚠️ Screenshot grab error: {e}")
+        return ""
     
     # Run Apple Vision OCR via Swift
     swift_bin = os.path.join(os.path.dirname(__file__), "vision_ocr")
