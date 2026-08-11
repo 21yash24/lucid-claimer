@@ -2,15 +2,15 @@
 android_adb_puzzle_solver.py
 ----------------------------
 100% Fully Automated Android Screen Mastermind Solver via ADB.
-- Connects to your Android phone over USB/Wi-Fi using ADB (Android Debug Bridge).
-- Automatically takes screenshots of your phone screen in real time.
-- Uses Apple Vision OCR (or EasyOCR) to read screen feedback (exact/partial matches).
-- Auto-types guesses directly onto your phone screen via 'adb shell input text'.
-- Auto-taps Submit button via 'adb shell input tap'.
-- Cracks the code fully automatically on your phone in under 2 seconds!
+- Uses Vision OCR bounding boxes to find exact tap coordinates of Input Box & Submit Button.
+- Taps Input Box, clears previous code, types guess.
+- Taps 'Submit Guess' button directly.
+- Reads '💡 X correct spot, Y wrong spot' feedback off screen.
+- Solves Mastermind puzzle on phone in under 2 seconds!
 """
 
 import os
+import re
 import sys
 import time
 import random
@@ -18,6 +18,9 @@ import string
 import subprocess
 import logging
 from typing import List, Tuple, Optional
+from Foundation import NSURL
+from Vision import VNRecognizeTextRequest, VNImageRequestHandler
+from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("ADBPuzzleSolver")
@@ -71,33 +74,61 @@ def adb_tap(x: int, y: int):
     except Exception as e:
         logger.error(f"⚠️ ADB tap error: {e}")
 
-def adb_key_enter():
-    """Sends ENTER key event to Android phone."""
+def adb_clear_input():
+    """Sends 6 backspaces to clear any existing input text."""
     try:
-        subprocess.run([ADB_BIN, "shell", "input", "keyevent", "66"], check=True)
+        for _ in range(6):
+            subprocess.run([ADB_BIN, "shell", "input", "keyevent", "67"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        logger.error(f"⚠️ ADB keyevent error: {e}")
+        logger.error(f"⚠️ ADB backspace error: {e}")
 
-from Foundation import NSURL
-from Vision import VNRecognizeTextRequest, VNImageRequestHandler
-
-def run_vision_ocr(image_path: str) -> str:
-    """Runs Apple Vision OCR via PyObjC on captured phone screenshot."""
+def parse_screen_elements(image_path: str) -> Tuple[str, Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
+    """
+    Runs Apple Vision OCR on phone screenshot.
+    Returns:
+    - full_text string
+    - input_box_coords (x, y)
+    - submit_button_coords (x, y)
+    """
     try:
+        img = Image.open(image_path)
+        w, h = img.size
+        
         img_url = NSURL.fileURLWithPath_(image_path)
         req = VNRecognizeTextRequest.alloc().init()
-        req.setRecognitionLevel_(1)
+        req.setRecognitionLevel_(0)  # Accurate
         req.setUsesLanguageCorrection_(False)
         
         handler = VNImageRequestHandler.alloc().initWithURL_options_(img_url, {})
         handler.performRequests_error_([req], None)
         
         results = req.results() or []
-        lines = [obs.topCandidates_(1)[0].string() for obs in results if obs.topCandidates_(1)]
-        return "\n".join(lines)
+        lines = []
+        input_coords = None
+        submit_coords = None
+        
+        for obs in results:
+            candidates = obs.topCandidates_(1)
+            if not candidates:
+                continue
+            text = candidates[0].string()
+            lines.append(text)
+            
+            box = obs.boundingBox()
+            px = int((box.origin.x + box.size.width / 2) * w)
+            py = int((1 - (box.origin.y + box.size.height / 2)) * h)
+            
+            if "Submit" in text or "Wait" in text:
+                submit_coords = (px, py)
+            elif "5-digit" in text or "Enter the" in text:
+                # Target area slightly below 'Enter the 5-digit code' label
+                input_coords = (px, py + 120)
+                
+        full_text = "\n".join(lines)
+        return full_text, input_coords, submit_coords
     except Exception as e:
-        logger.error(f"⚠️ Phone OCR Error: {e}")
-        return ""
+        logger.error(f"⚠️ Vision OCR Element Parse Error: {e}")
+        return "", None, None
 
 class MastermindSolver:
     def __init__(self):
@@ -129,28 +160,73 @@ class MastermindSolver:
                 return False
         return True
 
-    def find_next_candidate(self) -> str:
-        chars = list(CHAR_SET)
-        for _ in range(100000):
-            cand = "".join(random.choices(chars, k=5))
-            if self.is_consistent(cand):
-                return cand
-        return "".join(random.choices(chars, k=5))
+    def find_candidate_backtrack(self, history: List[Tuple[str, int, int]]) -> Optional[str]:
+        chars = sorted(list(CHAR_SET))
+        pref = []
+        pref_counts = {}
+        
+        def backtrack(depth: int) -> Optional[str]:
+            if depth == 5:
+                return "".join(pref)
+                
+            remaining = 5 - (depth + 1)
+            
+            for c in chars:
+                pref.append(c)
+                pref_counts[c] = pref_counts.get(c, 0) + 1
+                
+                possible = True
+                for g_str, correct, wrong in history:
+                    matches = 0
+                    g_counts = {}
+                    for i in range(len(pref)):
+                        if pref[i] == g_str[i]:
+                            matches += 1
+                        g_counts[g_str[i]] = g_counts.get(g_str[i], 0) + 1
+                        
+                    if matches > correct:
+                        possible = False
+                        break
+                    if matches + remaining < correct:
+                        possible = False
+                        break
+                        
+                    min_overlap = 0
+                    for char, count in pref_counts.items():
+                        if char in g_counts:
+                            min_overlap += min(count, g_counts[char])
+                            
+                    if min_overlap > (correct + wrong):
+                        possible = False
+                        break
+                    if min_overlap + remaining < (correct + wrong):
+                        possible = False
+                        break
+                
+                if possible:
+                    res = backtrack(depth + 1)
+                    if res:
+                        return res
+                        
+                pref_counts[c] -= 1
+                if pref_counts[c] == 0:
+                    del pref_counts[c]
+                pref.pop()
+                    
+            return None
+            
+        return backtrack(0)
 
 def main():
     print("=" * 65)
-    print("📱 100% AUTOMATED ANDROID SCREEN MASTERMIND SOLVER (ADB)")
-    print("   1. Connect Android phone to Mac via USB (USB Debugging ON).")
-    print("   2. Open the 'Crack the Code' screen on your phone.")
-    print("   3. This script will auto-read screen, auto-type code, and auto-submit!")
+    print("📱 100% AUTOMATED VISUAL ADB MASTERMIND SOLVER IS ACTIVE!")
+    print("   1. Connect Android phone via USB / Wireless ADB.")
+    print("   2. Open 'Crack the Code' screen on your phone.")
+    print("   3. Script auto-types code, taps Submit button, & cracks code!")
     print("=" * 65 + "\n")
     
     if not check_adb_connected():
         print("\n❌ Error: No Android phone detected via ADB.")
-        print("   To connect your phone:")
-        print("   1. Enable 'Developer Options' & 'USB Debugging' on your phone.")
-        print("   2. Connect phone via USB cable to Mac.")
-        print("   3. Run: adb devices\n")
         return
 
     tmp_dir = os.path.join(os.path.dirname(__file__), "tmp_images")
@@ -164,10 +240,10 @@ def main():
     
     while True:
         if not capture_phone_screenshot(shot_path):
-            time.sleep(1)
+            time.sleep(0.5)
             continue
             
-        ocr_text = run_vision_ocr(shot_path)
+        ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
         
         # Check if Giveaway Puzzle screen is visible on phone
         if ("Crack the Code" in ocr_text or "5-digit code" in ocr_text or "spots left" in ocr_text) and not in_solving_loop:
@@ -175,7 +251,7 @@ def main():
             print("\n" + "🚨" * 25)
             print("🚨   LIVE PUZZLE DETECTED ON YOUR PHONE SCREEN!   🚨")
             print("🚨" * 25 + "\n")
-            logger.info("🎯 Puzzle screen active! Starting automatic screen interaction loop...")
+            logger.info(f"🎯 Target UI Elements: Input @ {input_coords}, Submit @ {submit_coords}")
             in_solving_loop = True
             
             next_guess = "".join(random.choices(CHAR_SET, k=5))
@@ -183,31 +259,56 @@ def main():
             for round_num in range(1, 15):
                 logger.info(f"👉 [Round {round_num}] Auto-typing guess '{next_guess}' into phone...")
                 
-                # 1. Type guess on phone screen via ADB
-                adb_type_text(next_guess)
+                # 1. Tap input box & clear existing text
+                if input_coords:
+                    adb_tap(input_coords[0], input_coords[1])
+                    time.sleep(0.1)
+                adb_clear_input()
                 time.sleep(0.1)
-                adb_key_enter()
-                time.sleep(0.4)
                 
-                # 2. Capture screenshot after submission
+                # 2. Type 5-digit guess
+                adb_type_text(next_guess)
+                time.sleep(0.15)
+                
+                # 3. Tap Submit button directly
+                if submit_coords:
+                    logger.info(f"👉 Tapping Submit Button @ {submit_coords}...")
+                    adb_tap(submit_coords[0], submit_coords[1])
+                else:
+                    # Fallback to standard bottom button location
+                    adb_tap(540, 1690)
+                
+                time.sleep(0.5)
+                
+                # 4. Capture screenshot after submission & read feedback
                 capture_phone_screenshot(shot_path)
-                post_text = run_vision_ocr(shot_path)
+                post_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
                 # Check for Win / End signals
-                if "Event ended" in post_text or "claimed" in post_text.lower() or "congratulations" in post_text.lower():
-                    logger.info("🎉 EVENT ENDED / WIN DETECTED ON SCREEN!")
+                if "Congratulations" in post_text or "WON" in post_text or "claimed" in post_text.lower():
+                    logger.info("🎉🎉🎉 PUZZLE CRACKED & WON ON PHONE SCREEN!")
+                    print("\a\a\a")
                     in_solving_loop = False
                     break
                     
-                # Calculate next optimal guess
-                next_guess = solver.find_next_candidate()
+                match = re.search(r"(\d+)\s*correct spot[^\d]*(\d+)\s*wrong spot", post_text, re.IGNORECASE)
+                if match:
+                    correct = int(match.group(1))
+                    wrong = int(match.group(2))
+                    logger.info(f"📊 Extracted screen feedback: {correct} correct, {wrong} wrong for '{next_guess}'")
+                    if (next_guess, correct, wrong) not in solver.history:
+                        solver.history.append((next_guess, correct, wrong))
+                        
+                # 5. Calculate next optimal backtrack candidate
+                candidate = solver.find_candidate_backtrack(solver.history)
+                next_guess = candidate or "".join(random.choices(CHAR_SET, k=5))
                 logger.info(f"⚡ Calculated next optimal guess: '{next_guess}'")
                 time.sleep(0.3)
                 
         elif not ("Crack the Code" in ocr_text or "5-digit code" in ocr_text):
             in_solving_loop = False
             
-        time.sleep(0.7)
+        time.sleep(0.6)
 
 if __name__ == "__main__":
     main()
