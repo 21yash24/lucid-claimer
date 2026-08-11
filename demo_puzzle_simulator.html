@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Giveaway - Crack the Code Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: #0b0f0e;
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px;
+    }
+    .header {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 12px 0 24px;
+    }
+    .header .back-btn {
+      position: absolute;
+      left: 0;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .header h1 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: #111a17;
+      border: 1px solid #1a2c26;
+      border-radius: 20px;
+      padding: 28px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+    .card .icon-gift {
+      width: 42px;
+      height: 42px;
+      background: rgba(34, 197, 94, 0.12);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .card .icon-gift svg {
+      width: 24px;
+      height: 24px;
+      stroke: #22c55e;
+      fill: none;
+      stroke-width: 2;
+    }
+    .card h2 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      letter-spacing: -0.3px;
+    }
+    .card .subtitle {
+      font-size: 14px;
+      color: #f59e0b;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+    .card .badge {
+      background: rgba(239, 68, 68, 0.18);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .input-section {
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .input-label {
+      font-size: 14px;
+      color: #9ca3af;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+    .boxes-container {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .box {
+      width: 58px;
+      height: 64px;
+      background: #0d1f18;
+      border: 2px solid #22c55e;
+      border-radius: 14px;
+      font-size: 26px;
+      font-weight: 800;
+      color: #22c55e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+      transition: all 0.2s ease;
+    }
+    .box:focus {
+      outline: none;
+      border-color: #4ade80;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+    }
+    .hidden-input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .feedback-box {
+      width: 100%;
+      max-width: 420px;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      min-height: 58px;
+    }
+    .feedback-box svg {
+      width: 22px;
+      height: 22px;
+      stroke: #38bdf8;
+      fill: none;
+      stroke-width: 2;
+      flex-shrink: 0;
+    }
+    .feedback-box span {
+      font-size: 14px;
+      color: #38bdf8;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .btn-submit {
+      width: 100%;
+      max-width: 420px;
+      height: 56px;
+      background: #15803d;
+      border: none;
+      border-radius: 16px;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease;
+    }
+    .btn-submit:disabled {
+      background: #164e2a;
+      color: #6b7280;
+      cursor: not-allowed;
+    }
+    .status-alert {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #94a3b8;
+      text-align: center;
+    }
+    .secret-debug {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #475569;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <button class="back-btn">&larr;</button>
+    <h1>Giveaway</h1>
+  </div>
+
+  <div class="card">
+    <div class="icon-gift">
+      <svg viewBox="0 0 24 24"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+    </div>
+    <h2>Crack the Code 🔐</h2>
+    <div class="subtitle">Alphanumeric code</div>
+    <div class="badge">1 / 1 spots left</div>
+  </div>
+
+  <div class="input-section">
+    <div class="input-label">Enter the 5-digit code</div>
+
+    <input type="text" id="hiddenInput" class="hidden-input" maxlength="5" autocomplete="off" autofocus>
+
+    <div class="boxes-container" id="boxesContainer">
+      <div class="box" id="b0"></div>
+      <div class="box" id="b1"></div>
+      <div class="box" id="b2"></div>
+      <div class="box" id="b3"></div>
+      <div class="box" id="b4"></div>
+    </div>
+
+    <div class="feedback-box" id="feedbackBox">
+      <svg viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z"/></svg>
+      <span id="feedbackText">Enter a 5-digit guess to start cracking!</span>
+    </div>
+
+    <button class="btn-submit" id="btnSubmit">Submit Guess</button>
+  </div>
+
+  <div class="status-alert" id="statusAlert">Demo Simulator Active • Ready for ADB / Visual Solver Test</div>
+  <div class="secret-debug" id="secretDebug">Secret: [HIDDEN]</div>
+
+  <script>
+    // Generate random 5-character secret code (Digits 0-9 & Uppercase A-Z)
+    const CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    function generateSecret() {
+      let res = "";
+      for (let i = 0; i < 5; i++) {
+        res += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+      }
+      return res;
+    }
+
+    const secretCode = generateSecret();
+    document.getElementById("secretDebug").innerText = `Secret: ${secretCode}`;
+
+    const hiddenInput = document.getElementById("hiddenInput");
+    const boxes = [
+      document.getElementById("b0"),
+      document.getElementById("b1"),
+      document.getElementById("b2"),
+      document.getElementById("b3"),
+      document.getElementById("b4")
+    ];
+    const feedbackText = document.getElementById("feedbackText");
+    const btnSubmit = document.getElementById("btnSubmit");
+    let cooldown = false;
+
+    // Focus input on click
+    document.body.addEventListener("click", () => hiddenInput.focus());
+
+    hiddenInput.addEventListener("input", (e) => {
+      let val = hiddenInput.value.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 5);
+      hiddenInput.value = val;
+      for (let i = 0; i < 5; i++) {
+        boxes[i].innerText = val[i] || "";
+      }
+    });
+
+    function calculateFeedback(guess, secret) {
+      let correct = 0;
+      let guessUnmatched = [];
+      let secretUnmatched = [];
+
+      for (let i = 0; i < 5; i++) {
+        if (guess[i] === secret[i]) {
+          correct++;
+        } else {
+          guessUnmatched.push(guess[i]);
+          secretUnmatched.push(secret[i]);
+        }
+      }
+
+      let wrong = 0;
+      for (let char of guessUnmatched) {
+        let idx = secretUnmatched.indexOf(char);
+        if (idx !== -1) {
+          wrong++;
+          secretUnmatched.splice(idx, 1);
+        }
+      }
+      return { correct, wrong };
+    }
+
+    btnSubmit.addEventListener("click", () => {
+      if (cooldown) return;
+      let guess = hiddenInput.value;
+      if (guess.length !== 5) {
+        feedbackText.innerText = "Please enter full 5-digit code!";
+        return;
+      }
+
+      const { correct, wrong } = calculateFeedback(guess, secretCode);
+
+      if (correct === 5) {
+        feedbackText.innerText = `🎉🎉🎉 5 correct spot, 0 wrong spot — Congratulations! YOU WON!`;
+        btnSubmit.innerText = "CONGRATULATIONS!";
+        btnSubmit.style.background = "#22c55e";
+        btnSubmit.disabled = true;
+      } else {
+        feedbackText.innerText = `💡 ${correct} correct spot, ${wrong} wrong spot — try again!`;
+        
+        // Cooldown timer
+        cooldown = true;
+        let timer = 2;
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = `Wait ${timer}s`;
+
+        let interval = setInterval(() => {
+          timer--;
+          if (timer > 0) {
+            btnSubmit.innerText = `Wait ${timer}s`;
+          } else {
+            clearInterval(interval);
+            cooldown = false;
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = "Submit Guess";
+            hiddenInput.value = "";
+            for (let b of boxes) b.innerText = "";
+            hiddenInput.focus();
+          }
+        }, 1000);
+      }
+    });
+  </script>
+</body>
+</html>
