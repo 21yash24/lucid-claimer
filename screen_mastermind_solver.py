@@ -192,15 +192,26 @@ def main():
                 pyautogui.write(next_guess, interval=0.02)
                 pyautogui.press('enter')
                 
-                time.sleep(0.3)
+                time.sleep(0.4)
                 feedback_text = get_screen_ocr_text()
                 
-                if "Event ended" in feedback_text or "claimed" in feedback_text.lower():
-                    logger.info("🏁 Event ended or claimed!")
+                if "Congratulations" in feedback_text or "WON" in feedback_text or "claimed" in feedback_text.lower():
+                    logger.info("🎉🎉🎉 PUZZLE CRACKED & WON ON SCREEN!")
+                    print("\a\a\a")
+                    active_detected = False
                     break
                     
+                match = re.search(r"(\d+)\s*correct spot[^\d]*(\d+)\s*wrong spot", feedback_text, re.IGNORECASE)
+                if match:
+                    correct = int(match.group(1))
+                    wrong = int(match.group(2))
+                    logger.info(f"📊 Extracted feedback from screen: {correct} correct, {wrong} wrong for '{next_guess}'")
+                    if (next_guess, correct, wrong) not in solver.history:
+                        solver.history.append((next_guess, correct, wrong))
+                        
                 candidate = solver.find_candidate_backtrack(solver.history)
                 next_guess = candidate or "".join(random.choices(CHAR_SET, k=5))
+                logger.info(f"⚡ Optimal next backtrack guess: '{next_guess}'")
                 
         elif not ("Crack the Code" in text or "5-digit code" in text):
             active_detected = False
