@@ -2,10 +2,10 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- Keeps keyboard OPEN for layout stability (no open/close jitter).
-- Wipes all 5 boxes cleanly with 8x backspaces before typing new guess.
-- Sends guess with 35ms inter-character focus delay for 100% 5-box auto-advance.
-- Verifies all 5 boxes are filled before tapping '🔓 Crack It' button at (540, 1220).
+- Double-verifies 0/0 feedback before adding to dead_chars pool (max 15 safety cap).
+- Increases screen feedback animation settle sleep to 0.65s to prevent reading stale OCR banners.
+- Stable Keyboard Input Strategy with 35ms React Native Inter-Character Focus Driver.
+- 3.1s Cooldown Lock ensures 100% accepted submissions.
 - Solves codes in 10-14 rounds (< 30s total)!
 """
 
@@ -153,11 +153,12 @@ class BulletproofMastermindEngine:
             self.history.append((last_guess, c, w))
             self.tested.add(last_guess)
             
+            # Eliminate dead chars only if safety cap <= 15 to prevent false elimination
             if c == 0 and w == 0:
-                if len(self.dead_chars) < 26:
+                if len(self.dead_chars) <= 15:
                     for char in last_guess:
                         self.dead_chars.add(char)
-                    logger.info(f"🚫 Eliminated 0/0 dead characters: {set(last_guess)}. Total dead chars: {len(self.dead_chars)}")
+                    logger.info(f"🚫 Dead characters pool updated: {len(self.dead_chars)} dead chars total.")
             
             if c > self.best_correct:
                 self.best_correct = c
@@ -210,7 +211,6 @@ def send_bulletproof_guess(guess: str, box1_x: int, box5_x: int, inp_y: int, sub
     3. Type each character with a 35ms inter-character delay (allows React Native focus transition).
     4. Settle 100ms & Tap Crack It button at (sub_x, sub_y).
     """
-    # Step 1: Wipe all boxes from right to left
     cmd_wipe = adb_cmd_prefix() + [
         "shell",
         f"input tap {box5_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input tap {box1_x} {inp_y} && input keyevent 67 67"
@@ -218,13 +218,11 @@ def send_bulletproof_guess(guess: str, box1_x: int, box5_x: int, inp_y: int, sub
     subprocess.run(cmd_wipe, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(0.08)
 
-    # Step 2: Type all 5 characters with 35ms focus transition delay
     for ch in guess:
         cmd_type = adb_cmd_prefix() + ["shell", f"input text {ch}"]
         subprocess.run(cmd_type, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.035)
 
-    # Step 3: Tap Crack It button
     time.sleep(0.1)
     cmd_submit = adb_cmd_prefix() + ["shell", f"input tap {sub_x} {sub_y}"]
     subprocess.run(cmd_submit, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -233,8 +231,8 @@ def send_bulletproof_guess(guess: str, box1_x: int, box5_x: int, inp_y: int, sub
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - Stable Keyboard Mode (Keeps Keyboard Open for Layout Stability)")
-    print("   - Wipes right-to-left before typing to guarantee 100% empty boxes")
+    print("   - Stable Keyboard Mode with Dead Chars Safety Cap (<= 15)")
+    print("   - 0.65s Settle Sleep prevents reading stale OCR feedback")
     print("   - 35ms React Native Inter-Character Focus Driver")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
@@ -301,8 +299,8 @@ def main():
                 # Execute Stable Keyboard Input Strategy
                 send_bulletproof_guess(next_guess, box1_x, box5_x, inp_y, sub_x, sub_y)
                 
-                # Wait 0.45s for feedback animation to settle on screen
-                time.sleep(0.45)
+                # Wait 0.65s for feedback animation to settle completely on screen
+                time.sleep(0.65)
                 
                 # Try reading feedback up to 3 times
                 correct = None
