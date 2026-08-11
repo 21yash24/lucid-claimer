@@ -2,8 +2,9 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- Taps Box 1 directly to focus 5-character input array.
-- Detects 'Crack It' button on real app screen.
+- Converts 5-character guess to native Android ADB keyevents.
+- Triggers native app key handlers to fill all 5 boxes 1-by-1.
+- Detects 'Crack It' / 'Crack' button on real app screen.
 - Solves 0/0 dead character elimination.
 - Cracks any 5-digit code in 8-12 rounds (< 25-30s)!
 """
@@ -75,6 +76,20 @@ def capture_phone_screenshot(save_path: str) -> bool:
     except Exception as e:
         logger.error(f"⚠️ Screencapture error: {e}")
         return False
+
+def char_to_keycode(ch: str) -> int:
+    """Converts a single character to Android ADB KEYCODE integer."""
+    ch = ch.upper()
+    if '0' <= ch <= '9':
+        return 7 + (ord(ch) - ord('0'))  # KEYCODE_0 (7) to KEYCODE_9 (16)
+    elif 'A' <= ch <= 'Z':
+        return 29 + (ord(ch) - ord('A')) # KEYCODE_A (29) to KEYCODE_Z (54)
+    return 0
+
+def guess_to_keyevents(guess_str: str) -> str:
+    """Converts a 5-character string into ADB keyevent sequence."""
+    keycodes = [str(char_to_keycode(ch)) for ch in guess_str if char_to_keycode(ch) > 0]
+    return " ".join(keycodes)
 
 def parse_screen_elements(image_path: str) -> Tuple[str, Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
     """
@@ -204,7 +219,7 @@ class BulletproofMastermindEngine:
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - Taps Box 1 directly to focus 5-character input array")
+    print("   - Converts guesses to native Android keyevents for 100% box filling")
     print("   - Detects 'Crack It' button on real app screen")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
@@ -261,16 +276,18 @@ def main():
                 capture_phone_screenshot(shot_path)
                 ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
-                # Target Box #1 (x=240, y=300) for 1080p resolution or OCR input_coords
-                inp_x = (input_coords[0] - 250) if input_coords else 240
+                inp_x = (input_coords[0] - 250) if input_coords else 220
                 inp_y = input_coords[1] if input_coords else 300
                 sub_x = submit_coords[0] if submit_coords else 540
                 sub_y = submit_coords[1] if submit_coords else 510
                 
-                # Execute focus Box 1 tap, 8x clear backspaces, input full 5-char guess, & tap Crack It button
+                # Convert guess to native Android keyevents (e.g. 01234 -> 7 8 9 10 11)
+                guess_keys = guess_to_keyevents(next_guess)
+                
+                # Execute Box 1 focus tap, 8x backspace wipes, native keyevent typing, & Crack It tap
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input text {next_guess} && input tap {sub_x} {sub_y}"
+                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input keyevent {guess_keys} && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
