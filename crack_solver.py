@@ -46,15 +46,21 @@ def get_feedback(guess: str, secret: str) -> Tuple[int, int]:
 
 # ── Candidate endpoints ──────────────────────────────────────────────────────
 STATUS_ENDPOINTS = [
-    "https://dash.lucidtrading.com/api/events/active",    # ✅ CONFIRMED REAL
+    "https://dash.lucidtrading.com/api/events/active",
+    "https://dash.lucidtrading.com/api/mobile/events/active",
+    "https://dash.lucidtrading.com/api/mobile/events",
+    "https://dash.lucidtrading.com/api/mobile/giveaway",
+    "https://dash.lucidtrading.com/api/mobile/giveaways",
+    "https://dash.lucidtrading.com/api/events/status",
     "https://dash.lucidtrading.com/api/rewards/status",
-    "https://dash.lucidtrading.com/api/giveaway/status",
 ]
 
 GUESS_ENDPOINTS = [
-    "https://dash.lucidtrading.com/api/events/submit",    # ✅ CONFIRMED REAL
+    "https://dash.lucidtrading.com/api/events/submit",
+    "https://dash.lucidtrading.com/api/mobile/events/submit",
+    "https://dash.lucidtrading.com/api/mobile/events/guess",
+    "https://dash.lucidtrading.com/api/mobile/giveaway/guess",
     "https://dash.lucidtrading.com/api/rewards/guess",
-    "https://dash.lucidtrading.com/api/giveaway/guess",
 ]
 
 class MastermindSolver:
@@ -453,7 +459,7 @@ class MastermindSolver:
                 else:
                     logger.info(f"⏳ [Giveaway Watcher #{check_count}] Active probe → status: '{status_data.get('status', 'closed')}' (😴 No event live)")
 
-                await asyncio.sleep(3.0)
+                await asyncio.sleep(1.5)
 
 async def main():
     token = config.ACCOUNT_TOKENS[0] if config.ACCOUNT_TOKENS else None
