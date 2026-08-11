@@ -24,41 +24,42 @@ logger = logging.getLogger("ScreenSolver")
 
 CHAR_SET = string.digits + string.ascii_uppercase  # 0-9 and A-Z
 
-from Quartz import CGWindowListCreateImage, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault, CGRectInfinite, CGImageGetWidth, CGImageGetHeight, CGImageGetDataProvider, CGDataProviderCopyData
-from PIL import Image
+from Foundation import NSURL
+from Vision import VNRecognizeTextRequest, VNImageRequestHandler
 
 def get_screen_ocr_text() -> str:
     """
-    Captures screenshot of Mac display using Quartz CoreGraphics and runs Apple Vision OCR.
+    Captures screenshot of Mac display using screencapture and runs Apple Vision OCR natively via PyObjC.
     Returns extracted text string.
     """
     screenshot_path = os.path.join(os.path.dirname(__file__), "tmp_images", "screen_ocr_tmp.png")
     os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
     
-    # Native Quartz macOS Screen Capture (0 CLI calls, 0 errors)
     try:
-        cg_img = CGWindowListCreateImage(CGRectInfinite, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault)
-        if cg_img:
-            w = CGImageGetWidth(cg_img)
-            h = CGImageGetHeight(cg_img)
-            data = CGDataProviderCopyData(CGImageGetDataProvider(cg_img))
-            img = Image.frombytes('RGBA', (w, h), data, 'raw', 'BGRA')
-            img.save(screenshot_path)
-    except Exception as e:
-        logger.error(f"⚠️ Quartz screenshot capture error: {e}")
-        return ""
-    
-    # Run Apple Vision OCR via Swift
-    swift_bin = os.path.join(os.path.dirname(__file__), "vision_ocr")
-    if not os.path.exists(swift_bin):
-        swift_src = os.path.join(os.path.dirname(__file__), "vision_ocr.swift")
-        if os.path.exists(swift_src):
-            subprocess.run(["swiftc", "-O", swift_src, "-o", swift_bin], check=True)
+        # Take screen capture
+        res = subprocess.run(["screencapture", "-x", screenshot_path], capture_output=True)
+        if res.returncode != 0:
+            return ""
             
-    if os.path.exists(swift_bin):
-        res = subprocess.run([swift_bin, screenshot_path], capture_output=True, text=True)
-        return res.stdout
-    return ""
+        # Native PyObjC Apple Vision OCR (0.05s response time)
+        img_url = NSURL.fileURLWithPath_(screenshot_path)
+        req = VNRecognizeTextRequest.alloc().init()
+        req.setRecognitionLevel_(1) # 1 = Fast, 0 = Accurate
+        req.setUsesLanguageCorrection_(False)
+        
+        handler = VNImageRequestHandler.alloc().initWithURL_options_(img_url, {})
+        success, err = handler.performRequests_error_([req], None)
+        
+        results = req.results() or []
+        lines = []
+        for obs in results:
+            candidates = obs.topCandidates_(1)
+            if candidates:
+                lines.append(candidates[0].string())
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"⚠️ Vision OCR Error: {e}")
+        return ""
 
 class VisualMastermindSolver:
     def __init__(self):
