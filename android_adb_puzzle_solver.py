@@ -227,15 +227,15 @@ def main():
                 sub_x = submit_coords[0] if submit_coords else 540
                 sub_y = submit_coords[1] if submit_coords else 1030
                 
-                # Clear text, type guess, & tap submit in ONE BATCHED COMMAND (NO TAP ON INPUT BOX -> NO KEYBOARD POPUP!)
+                # Execute clear, type, close keyboard (keyevent 4), and tap submit in ONE BATCHED COMMAND
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
+                    f"input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 4 && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                # Wait 0.35s for feedback animation to settle on screen
-                time.sleep(0.35)
+                # Wait 0.45s for keyboard to dismiss & screen feedback to settle
+                time.sleep(0.45)
                 
                 # Capture screenshot after submission & read feedback
                 capture_phone_screenshot(shot_path)
@@ -267,7 +267,7 @@ def main():
                     wrong = int(match.group(2))
                     logger.info(f"📊 Extracted screen feedback: {correct} correct, {wrong} wrong for '{next_guess}'")
                 else:
-                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'. Cleaned OCR Text snippet: {repr(clean_ocr_text[:150])}")
+                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'. OCR Text snippet: {repr(clean_ocr_text[:150])}")
                     
                 # Calculate next optimal guess using Knuth Candidate Pruning
                 next_guess = solver.get_next_guess(next_guess, correct, wrong)
