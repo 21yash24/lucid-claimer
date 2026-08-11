@@ -3,275 +3,325 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lucid App Giveaway Exact Simulator</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Giveaway - Lucid App</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             user-select: none;
         }
 
         body {
-            background-color: #05070a;
+            background-color: #000000;
             color: #ffffff;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            padding: 20px;
+            padding: 0;
+            margin: 0;
         }
 
-        .phone-frame {
-            width: 380px;
-            height: 780px;
-            background-color: #0b0e14;
-            border-radius: 40px;
-            border: 8px solid #1f2937;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        .mobile-screen {
+            width: 412px;
+            height: 915px;
+            background-color: #000000;
             position: relative;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            border: 1px solid #1a1a1a;
         }
 
+        /* Top Android Status Bar */
         .status-bar {
-            height: 35px;
+            height: 44px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0 20px;
-            font-size: 12px;
+            padding: 0 24px;
+            font-size: 14px;
             font-weight: 600;
-            color: #9ca3af;
+            color: #ffffff;
         }
 
-        .header {
-            height: 50px;
+        .status-icons {
             display: flex;
             align-items: center;
-            padding: 0 20px;
-            border-bottom: 1px solid #161e2e;
+            gap: 6px;
+            font-size: 12px;
         }
 
-        .header h2 {
-            font-size: 18px;
+        /* App Bar */
+        .app-bar {
+            height: 56px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+        }
+
+        .back-btn {
+            font-size: 24px;
+            color: #ffffff;
+            cursor: pointer;
+            width: 40px;
+        }
+
+        .app-bar-title {
+            font-size: 20px;
             font-weight: 700;
+            color: #ffffff;
             flex: 1;
             text-align: center;
-            margin-right: 24px;
+            margin-right: 40px;
         }
 
-        .content {
-            padding: 20px;
+        .main-content {
+            padding: 16px 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
             flex: 1;
         }
 
-        .card {
+        /* Top Hero Card */
+        .hero-card {
             width: 100%;
-            background: rgba(16, 24, 38, 0.8);
-            border: 1px solid #1e293b;
-            border-radius: 16px;
-            padding: 20px;
-            text-align: center;
-            margin-bottom: 24px;
+            background-color: #090c10;
+            border: 1px solid #161b22;
+            border-radius: 20px;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 28px;
         }
 
-        .card-icon {
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
-
-        .card-title {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 4px;
-        }
-
-        .card-subtitle {
-            font-size: 13px;
-            color: #f59e0b;
+        .gift-icon {
+            width: 44px;
+            height: 44px;
             margin-bottom: 12px;
         }
 
+        .card-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .card-subtitle {
+            font-size: 14px;
+            color: #d97706;
+            font-weight: 500;
+            margin-bottom: 14px;
+        }
+
         .spots-badge {
-            display: inline-block;
-            background-color: rgba(239, 68, 68, 0.2);
+            background-color: rgba(220, 38, 38, 0.2);
             color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.3);
+            border: 1px solid rgba(220, 38, 38, 0.3);
             border-radius: 20px;
-            padding: 4px 12px;
-            font-size: 12px;
+            padding: 6px 16px;
+            font-size: 13px;
             font-weight: 600;
         }
 
-        .input-label {
-            font-size: 13px;
-            color: #94a3b8;
-            margin-bottom: 16px;
+        .input-instruction {
+            font-size: 14px;
+            color: #9ca3af;
+            margin-bottom: 18px;
+            text-align: center;
         }
 
-        .boxes-container {
+        /* 5 Green Input Boxes */
+        .boxes-row {
             display: flex;
-            gap: 10px;
+            gap: 12px;
             margin-bottom: 24px;
         }
 
         .code-box {
-            width: 52px;
-            height: 58px;
-            background-color: #0f172a;
+            width: 58px;
+            height: 64px;
+            background-color: #090c10;
             border: 2px solid #00e676;
-            border-radius: 12px;
-            font-size: 24px;
+            border-radius: 14px;
+            font-size: 26px;
             font-weight: 700;
             color: #00e676;
             text-align: center;
             text-transform: uppercase;
             outline: none;
             caret-color: #00e676;
-            transition: all 0.15s ease;
+        }
+
+        .code-box.empty {
+            border: 2px dashed #22272e;
+            color: #383e47;
         }
 
         .code-box:focus {
-            border-color: #38bdf8;
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+            border-color: #00e676 !important;
+            border-style: solid !important;
         }
 
-        .feedback-banner {
+        /* Blue Feedback Banner */
+        .feedback-card {
             width: 100%;
-            background-color: #0d1b2a;
-            border: 1px solid #1e3a8a;
-            border-radius: 12px;
-            padding: 14px 16px;
+            background-color: #0b192e;
+            border: 1px solid #172a46;
+            border-radius: 14px;
+            padding: 16px;
             display: flex;
             align-items: center;
             gap: 12px;
-            font-size: 13px;
-            color: #60a5fa;
+            font-size: 14px;
+            color: #38bdf8;
             font-weight: 600;
-            margin-bottom: 24px;
-            min-height: 52px;
+            margin-bottom: 20px;
+            line-height: 1.4;
+            min-height: 56px;
         }
 
-        .feedback-banner .bulb {
-            font-size: 18px;
+        .feedback-card .icon {
+            font-size: 20px;
         }
 
-        .submit-btn {
+        /* Green Button */
+        .crack-button {
             width: 100%;
-            height: 52px;
-            background: linear-gradient(135deg, #00e676 0%, #00c853 100%);
-            color: #05070a;
+            height: 54px;
+            background-color: #00e676;
+            color: #000000;
             border: none;
-            border-radius: 14px;
-            font-size: 16px;
+            border-radius: 16px;
+            font-size: 17px;
             font-weight: 700;
             cursor: pointer;
             display: flex;
             justify-content: center;
             align-items: center;
             gap: 8px;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 14px rgba(0, 230, 118, 0.3);
+            transition: all 0.15s ease;
         }
 
-        .submit-btn:disabled {
-            background: #1e293b;
-            color: #64748b;
-            box-shadow: none;
+        .crack-button:disabled {
+            background-color: #0a3d24;
+            color: #1a6b41;
             cursor: not-allowed;
         }
 
-        .qualify-text {
-            font-size: 11px;
+        .qualify-notice {
+            font-size: 12px;
             color: #d97706;
             text-align: center;
-            margin-top: 16px;
-            line-height: 1.4;
+            margin-top: 18px;
+            line-height: 1.5;
+            padding: 0 10px;
+            font-weight: 500;
         }
 
-        .debug-panel {
+        /* Secret Code Controls */
+        .control-bar {
             position: absolute;
-            bottom: 10px;
+            bottom: 12px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(15, 23, 42, 0.95);
             border: 1px solid #334155;
-            padding: 8px 16px;
             border-radius: 20px;
+            padding: 6px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             font-size: 11px;
             color: #a7f3d0;
-            display: flex;
-            gap: 12px;
-            align-items: center;
         }
 
-        .debug-panel button {
+        .control-bar button {
             background: #0284c7;
             color: white;
             border: none;
-            padding: 3px 8px;
-            border-radius: 6px;
+            padding: 4px 10px;
+            border-radius: 10px;
             font-size: 10px;
+            font-weight: 600;
             cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <div class="phone-frame">
+    <div class="mobile-screen">
+        <!-- Android Status Bar -->
         <div class="status-bar">
             <span>22:50</span>
-            <span>📶 100%</span>
+            <div class="status-icons">
+                <span>⚡ 1.48 KB/s</span>
+                <span>VoNR</span>
+                <span>📶 100%</span>
+            </div>
         </div>
 
-        <div class="header">
-            <span style="font-size: 18px; cursor: pointer;">←</span>
-            <h2>Giveaway</h2>
+        <!-- Top Navigation Bar -->
+        <div class="app-bar">
+            <span class="back-btn">←</span>
+            <div class="app-bar-title">Giveaway</div>
         </div>
 
-        <div class="content">
-            <div class="card">
-                <div class="card-icon">🎁</div>
+        <div class="main-content">
+            <!-- Main Giveaway Card -->
+            <div class="hero-card">
+                <svg class="gift-icon" viewBox="0 0 24 24" fill="none" stroke="#00e676" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 12 20 22 4 22 4 12"></polyline>
+                    <rect x="2" y="7" width="20" height="5"></rect>
+                    <line x1="12" y1="22" x2="12" y2="7"></line>
+                    <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+                    <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+                </svg>
                 <div class="card-title">Crack the Code 🔐</div>
                 <div class="card-subtitle">Alphanumeric code</div>
                 <div class="spots-badge">1 / 1 spots left</div>
             </div>
 
-            <div class="input-label">Enter the 5-digit code</div>
+            <div class="input-instruction">Enter the 5-digit code</div>
 
-            <!-- EXACT 5 REACT NATIVE INPUT BOXES -->
-            <div class="boxes-container">
-                <input type="text" maxlength="1" class="code-box" id="box1" autofocus autocomplete="off">
-                <input type="text" maxlength="1" class="code-box" id="box2" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box" id="box3" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box" id="box4" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box" id="box5" autocomplete="off">
+            <!-- 5 Green Input Boxes -->
+            <div class="boxes-row">
+                <input type="text" maxlength="1" class="code-box empty" id="box1" autofocus autocomplete="off">
+                <input type="text" maxlength="1" class="code-box empty" id="box2" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box empty" id="box3" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box empty" id="box4" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box empty" id="box5" autocomplete="off">
             </div>
 
-            <div class="feedback-banner" id="feedbackBanner">
-                <span class="bulb">💡</span>
-                <span id="feedbackText">Try guessing the 5-character code!</span>
+            <!-- Blue Feedback Banner -->
+            <div class="feedback-card" id="feedbackCard">
+                <span class="icon">💡</span>
+                <span id="feedbackText">0 correct spot, 0 wrong spot — try again!</span>
             </div>
 
-            <button class="submit-btn" id="submitBtn" onclick="submitGuess()">
-                <span>🔓</span> <span id="btnText">Crack It</span>
+            <!-- Green Crack It Button -->
+            <button class="crack-button" id="crackBtn" onclick="submitGuess()">
+                <span id="lockIcon">🔓</span>
+                <span id="btnLabel">Crack It</span>
             </button>
 
-            <div class="qualify-text">
+            <div class="qualify-notice">
                 To qualify for giveaways you must be following Lucid on X, Discord and Instagram.
             </div>
         </div>
 
-        <div class="debug-panel">
-            <span>Secret: <b id="secretDisplay">...</b></span>
-            <button onclick="newSecret()">New Code</button>
+        <div class="control-bar">
+            <span>Secret: <b id="secretVal">...</b></span>
+            <button onclick="generateNewSecret()">Generate Code</button>
         </div>
     </div>
 
@@ -286,33 +336,41 @@
 
         let SECRET_CODE = "";
         let isCooldown = false;
-        let cooldownTimer = null;
+        let cooldownInterval = null;
 
-        const CHAR_POOL = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const CHAR_SET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-        function newSecret() {
+        function generateNewSecret() {
             SECRET_CODE = "";
             for (let i = 0; i < 5; i++) {
-                SECRET_CODE += CHAR_POOL.charAt(Math.floor(Math.random() * CHAR_POOL.length));
+                SECRET_CODE += CHAR_SET.charAt(Math.floor(Math.random() * CHAR_SET.length));
             }
-            document.getElementById('secretDisplay').innerText = SECRET_CODE;
-            clearBoxes();
-            document.getElementById('feedbackText').innerText = "Try guessing the 5-character code!";
+            document.getElementById('secretVal').innerText = SECRET_CODE;
+            resetBoxes();
+            document.getElementById('feedbackText').innerText = "0 correct spot, 0 wrong spot — try again!";
         }
 
-        function clearBoxes() {
-            boxes.forEach(box => box.value = "");
+        function resetBoxes() {
+            boxes.forEach(b => {
+                b.value = "";
+                b.classList.add('empty');
+            });
             boxes[0].focus();
         }
 
-        // React Native Segmented Input Auto-Advance Simulation (30ms focus transition delay)
+        // React Native Segmented Input Simulation (35ms inter-character focus transition)
         boxes.forEach((box, idx) => {
-            box.addEventListener('input', (e) => {
+            box.addEventListener('input', () => {
                 box.value = box.value.toUpperCase();
-                if (box.value && idx < 4) {
-                    setTimeout(() => {
-                        boxes[idx + 1].focus();
-                    }, 30);
+                if (box.value) {
+                    box.classList.remove('empty');
+                    if (idx < 4) {
+                        setTimeout(() => {
+                            boxes[idx + 1].focus();
+                        }, 35);
+                    }
+                } else {
+                    box.classList.add('empty');
                 }
             });
 
@@ -359,40 +417,39 @@
 
             if (guess === SECRET_CODE) {
                 document.getElementById('feedbackText').innerText = "🎉 Congratulations! You cracked the code and WON!";
-                document.getElementById('feedbackBanner').style.backgroundColor = "rgba(0, 230, 118, 0.2)";
-                document.getElementById('feedbackBanner').style.borderColor = "#00e676";
-                document.getElementById('submitBtn').disabled = true;
-                document.getElementById('btnText').innerText = "Puzzle Solved!";
+                document.getElementById('feedbackCard').style.backgroundColor = "rgba(0, 230, 118, 0.2)";
+                document.getElementById('feedbackCard').style.borderColor = "#00e676";
+                document.getElementById('crackBtn').disabled = true;
+                document.getElementById('btnLabel').innerText = "Puzzle Solved!";
                 return;
             }
 
             let { correct, wrong } = calculateFeedback(guess, SECRET_CODE);
             document.getElementById('feedbackText').innerText = `${correct} correct spot, ${wrong} wrong spot — try again!`;
 
-            // Start 3-second button cooldown
+            // Enforce 3-second button cooldown timer
             isCooldown = true;
-            let btn = document.getElementById('submitBtn');
-            let btnText = document.getElementById('btnText');
+            let btn = document.getElementById('crackBtn');
+            let label = document.getElementById('btnLabel');
             btn.disabled = true;
 
             let secondsLeft = 3;
-            btnText.innerText = `Wait ${secondsLeft}s`;
+            label.innerText = `Wait ${secondsLeft}s`;
 
-            cooldownTimer = setInterval(() => {
+            cooldownInterval = setInterval(() => {
                 secondsLeft--;
                 if (secondsLeft > 0) {
-                    btnText.innerText = `Wait ${secondsLeft}s`;
+                    label.innerText = `Wait ${secondsLeft}s`;
                 } else {
-                    clearInterval(cooldownTimer);
+                    clearInterval(cooldownInterval);
                     isCooldown = false;
                     btn.disabled = false;
-                    btnText.innerText = "Crack It";
+                    label.innerText = "Crack It";
                 }
             }, 1000);
         }
 
-        // Initialize on load
-        newSecret();
+        generateNewSecret();
     </script>
 </body>
 </html>
