@@ -2,9 +2,10 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- Double-verifies 0/0 feedback before adding to dead_chars pool (max 15 safety cap).
-- Increases screen feedback animation settle sleep to 0.65s to prevent reading stale OCR banners.
-- Stable Keyboard Input Strategy with 35ms React Native Inter-Character Focus Driver.
+- Reverse Sequential Box Eraser:
+  Taps Box 5 (X=860) -> sends 5x backspaces (erases Box 5->4->3->2->1 sequentially backward)
+  -> Taps Box 1 (X=230) -> 1x backspace (guarantees Box 1 empty & focused).
+- 35ms React Native Inter-Character Focus Driver for 100% clean typing.
 - 3.1s Cooldown Lock ensures 100% accepted submissions.
 - Solves codes in 10-14 rounds (< 30s total)!
 """
@@ -203,26 +204,38 @@ class BulletproofMastermindEngine:
             if r not in self.tested:
                 return r
 
-def send_bulletproof_guess(guess: str, box1_x: int, box5_x: int, inp_y: int, sub_x: int, sub_y: int):
+def send_bulletproof_guess(guess: str, center_x: int, inp_y: int, sub_x: int, sub_y: int):
     """
-    STABLE KEYBOARD INPUT STRATEGY:
-    1. Tap Box 5 (far right) -> 8x backspaces (wipes all 5 boxes from right to left).
-    2. Tap Box 1 (far left) -> 2x backspaces (ensures Box 1 is 100% empty & focused).
-    3. Type each character with a 35ms inter-character delay (allows React Native focus transition).
-    4. Settle 100ms & Tap Crack It button at (sub_x, sub_y).
+    REVERSE SEQUENTIAL BOX ERASER & REACT NATIVE DRIVER:
+    1. Tap Box 5 (center_x + 310) -> Send 5x Backspaces (wipes Box 5->4->3->2->1 backward).
+    2. Tap Box 1 (center_x - 310) -> Send 1x Backspace (guarantees Box 1 is empty & focused).
+    3. Send each character with 35ms inter-character delay for clean 5-box auto-advance.
+    4. Tap Crack It button at (sub_x, sub_y).
     """
-    cmd_wipe = adb_cmd_prefix() + [
-        "shell",
-        f"input tap {box5_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input tap {box1_x} {inp_y} && input keyevent 67 67"
-    ]
-    subprocess.run(cmd_wipe, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(0.08)
+    box1_x = center_x - 310
+    box5_x = center_x + 310
 
+    # Step 1: Reverse wipe from Box 5 back to Box 1
+    cmd_wipe_r5 = adb_cmd_prefix() + ["shell", f"input tap {box5_x} {inp_y}"]
+    subprocess.run(cmd_wipe_r5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.05)
+
+    cmd_bs5 = adb_cmd_prefix() + ["shell", "input keyevent 67 67 67 67 67"]
+    subprocess.run(cmd_bs5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.05)
+
+    # Step 2: Focus Box 1 & final clear
+    cmd_focus_b1 = adb_cmd_prefix() + ["shell", f"input tap {box1_x} {inp_y} && input keyevent 67"]
+    subprocess.run(cmd_focus_b1, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.06)
+
+    # Step 3: Send characters 1-by-1 with 35ms focus transition delay
     for ch in guess:
         cmd_type = adb_cmd_prefix() + ["shell", f"input text {ch}"]
         subprocess.run(cmd_type, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.035)
 
+    # Step 4: Tap Crack It button
     time.sleep(0.1)
     cmd_submit = adb_cmd_prefix() + ["shell", f"input tap {sub_x} {sub_y}"]
     subprocess.run(cmd_submit, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -231,9 +244,9 @@ def send_bulletproof_guess(guess: str, box1_x: int, box5_x: int, inp_y: int, sub
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - Stable Keyboard Mode with Dead Chars Safety Cap (<= 15)")
-    print("   - 0.65s Settle Sleep prevents reading stale OCR feedback")
+    print("   - Reverse Sequential Box Eraser (Box 5 -> 5x BS -> Box 1 -> 1x BS)")
     print("   - 35ms React Native Inter-Character Focus Driver")
+    print("   - 0.65s Settle Sleep prevents reading stale OCR feedback")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
     print("=" * 65 + "\n")
@@ -290,14 +303,12 @@ def main():
                 ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
                 center_x = input_coords[0] if input_coords else 540
-                box1_x = center_x - 310
-                box5_x = center_x + 310
                 inp_y = input_coords[1] if input_coords else 1019
                 sub_x = submit_coords[0] if submit_coords else 540
                 sub_y = submit_coords[1] if submit_coords else 1220
                 
-                # Execute Stable Keyboard Input Strategy
-                send_bulletproof_guess(next_guess, box1_x, box5_x, inp_y, sub_x, sub_y)
+                # Execute Reverse Sequential Box Eraser & 35ms driver
+                send_bulletproof_guess(next_guess, center_x, inp_y, sub_x, sub_y)
                 
                 # Wait 0.65s for feedback animation to settle completely on screen
                 time.sleep(0.65)
