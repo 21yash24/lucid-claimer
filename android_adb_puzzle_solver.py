@@ -3,7 +3,7 @@ android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP / SIMULATOR MASTERMIND PUZZLE SOLVER ENGINE.
 - Auto-detects Simulator vs Real App mode based on OCR text content.
-- Uses exact hardcoded coordinates for each mode, bypassing flaky OCR coordinate clicks.
+- Uses exact hardcoded Y and X coordinates verified by pixel-level analysis for both modes.
 - Batch box-by-box input with 80ms settle delay to ensure 100% browser/app focus.
 - Wipes simulator inputs instantly via ESCAPE key (keycode 111).
 - Wipes real app inputs via backward-backspace clearing.
@@ -165,24 +165,21 @@ class BulletproofMastermindEngine:
             if r not in self.tested:
                 return r
 
-# EXACT CALIBRATED COORDINATES FOR BOTH MODES
-BOX_X = [220, 380, 540, 700, 860]
+# EXACT COORDINATES FROM PIXEL ANALYSIS
+SIM_BOX_X = [172, 356, 540, 724, 908]
+SIM_INP_Y = 1295
+SIM_SUB_Y = 1417
 
-# Simulator (Chrome browser viewport coordinates)
-SIM_INP_Y = 1323
-SIM_SUB_Y = 1530
-
-# Real App viewport coordinates
+REAL_BOX_X = [162, 308, 452, 596, 742]
 REAL_INP_Y = 1019
-REAL_SUB_Y = 1220
+REAL_SUB_Y = 1200
 
 def send_guess_coordinate_mode(guess: str, is_simulator: bool):
     """
     Sends guess using exact coordinates and hardware keyevents.
-    - If simulator: Wipes with KEYCODE_ESCAPE (111).
-    - If real app: Wipes Box 5 -> Box 1 backwards.
-    - Types box-by-box with 80ms focus settle delay.
+    - Types box-by-box with 80ms focus settle delay to guarantee focus.
     """
+    box_x = SIM_BOX_X if is_simulator else REAL_BOX_X
     inp_y = SIM_INP_Y if is_simulator else REAL_INP_Y
     sub_y = SIM_SUB_Y if is_simulator else REAL_SUB_Y
     sub_x = 540
@@ -195,12 +192,12 @@ def send_guess_coordinate_mode(guess: str, is_simulator: bool):
         parts.append("input keyevent 111")
         parts.append("sleep 0.1")
     else:
-        # Real app reverse backspace clear
-        parts.append(f"input tap {BOX_X[4]} {inp_y}")
+        # Real app reverse backspace clear (tap Box 5, backspace 6 times, tap Box 1, backspace 1 time)
+        parts.append(f"input tap {box_x[4]} {inp_y}")
         parts.append("sleep 0.05")
         parts.append("input keyevent 67 67 67 67 67")
         parts.append("sleep 0.05")
-        parts.append(f"input tap {BOX_X[0]} {inp_y}")
+        parts.append(f"input tap {box_x[0]} {inp_y}")
         parts.append("sleep 0.05")
         parts.append("input keyevent 67")
         parts.append("sleep 0.08")
@@ -209,7 +206,7 @@ def send_guess_coordinate_mode(guess: str, is_simulator: bool):
     for i, ch in enumerate(guess):
         kc = CHAR_TO_KEYCODE.get(ch.upper())
         if kc is not None:
-            parts.append(f"input tap {BOX_X[i]} {inp_y}")
+            parts.append(f"input tap {box_x[i]} {inp_y}")
             parts.append("sleep 0.08")
             parts.append("input keyevent 123 67")  # MOVE_END + BACKSPACE
             parts.append("sleep 0.03")
@@ -229,7 +226,7 @@ def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
     print("   - Auto Mode Detection: Simulator vs Real App")
-    print("   - Bypasses OCR coordinate clicks with exact hardcoded layouts")
+    print("   - Exact hardcoded layouts from pixel-level analysis")
     print("   - Batch box-by-box typing with 80ms settle delay")
     print("   - Wipes simulator inputs instantly via ESCAPE key (keycode 111)")
     print("=" * 65 + "\n")
@@ -275,8 +272,9 @@ def main():
             last_submit_time = 0.0
             
             # Warm up keyboard on first round
+            box_x = SIM_BOX_X if is_simulator else REAL_BOX_X
             inp_y = SIM_INP_Y if is_simulator else REAL_INP_Y
-            subprocess.run(adb_cmd_prefix() + ["shell", f"input tap {BOX_X[0]} {inp_y}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(adb_cmd_prefix() + ["shell", f"input tap {box_x[0]} {inp_y}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(0.4)
             
             while in_solving_loop:
