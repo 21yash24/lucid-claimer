@@ -221,30 +221,36 @@ class BulletproofMastermindEngine:
 
 def submit_guess(guess: str, inp_y: int, sub_x: int, sub_y: int):
     """
-    FAST INPUT SEQUENCE (total ~310ms before Crack It tap):
-      1. Tap Box 1 at X=210 to focus & open keyboard.  [150ms wait]
-      2. Clear all 5 boxes with 7x backspace.           [50ms wait]
-      3. `input text {guess}` auto-advances all 5 boxes.[100ms wait]
-      4. Tap Crack It button.
-    NOTE: 3.1s BETWEEN-ROUND COOLDOWN is kept intact — do NOT remove it.
+    FAST INPUT SEQUENCE (~310ms before Crack It tap).
+    EXACT BOX COORDS from live screenshot analysis (1080x2392 device):
+      Box 1: X=244  Box 2: X=390  Box 3: X=537
+      Box 4: X=685  Box 5: X=834  All at Y=1019
+      Crack It button: X=540, Y=1220
+    NOTE: 3.1s BETWEEN-ROUND COOLDOWN is kept intact.
     """
-    box1_x = 210   # exact X of Box 1 on 1080px wide screen
+    # Use OCR coords if available, otherwise use exact measured defaults
+    box_y  = inp_y if inp_y else 1019
+    cr_x   = sub_x if sub_x else 540
+    cr_y   = sub_y if sub_y else 1220
 
-    # Step 1: Focus Box 1 — opens keyboard
-    adb_shell(f"input tap {box1_x} {inp_y}")
-    time.sleep(0.15)          # 150ms — minimum for focus to register
+    # Exact X centers of each of the 5 green boxes
+    BOX_X = [244, 390, 537, 685, 834]
+
+    # Step 1: Tap Box 1 to focus (opens keyboard)
+    adb_shell(f"input tap {BOX_X[0]} {box_y}")
+    time.sleep(0.15)          # 150ms — minimum for focus
 
     # Step 2: Clear all 5 boxes
     adb_shell("input keyevent 67 67 67 67 67 67 67")
-    time.sleep(0.05)          # 50ms — keyevents are instantaneous
+    time.sleep(0.05)          # 50ms
 
     # Step 3: Type all 5 chars via keyboard auto-advance
     adb_shell(f"input text {guess}")
-    time.sleep(0.1)           # 100ms — chars settle before Crack It tap
+    time.sleep(0.1)           # 100ms settle
 
     # Step 4: Tap Crack It
-    adb_shell(f"input tap {sub_x} {sub_y}")
-    logger.info(f"   ✅ Tapped Crack It @ ({sub_x}, {sub_y})")
+    adb_shell(f"input tap {cr_x} {cr_y}")
+    logger.info(f"   ✅ Tapped Crack It @ ({cr_x}, {cr_y})")
 
 
 def main():
