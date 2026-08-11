@@ -2,10 +2,9 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- Detects 'Crack It' / 'Crack' button text on real app screen.
+- Taps Box 1 directly to focus 5-character input array.
+- Detects 'Crack It' button on real app screen.
 - Solves 0/0 dead character elimination.
-- Resolves OCR confusion between '1' and 'I' / 'l' / '|'.
-- Auto-dismisses soft keyboard (keyevent 111) to prevent keyboard taps.
 - Cracks any 5-digit code in 8-12 rounds (< 25-30s)!
 """
 
@@ -205,8 +204,8 @@ class BulletproofMastermindEngine:
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
+    print("   - Taps Box 1 directly to focus 5-character input array")
     print("   - Detects 'Crack It' button on real app screen")
-    print("   - Auto-hides soft keyboard to prevent keyboard taps")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
     print("=" * 65 + "\n")
@@ -262,22 +261,23 @@ def main():
                 capture_phone_screenshot(shot_path)
                 ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
-                inp_x = input_coords[0] if input_coords else 540
-                inp_y = input_coords[1] if input_coords else 700
+                # Target Box #1 (x=240, y=300) for 1080p resolution or OCR input_coords
+                inp_x = (input_coords[0] - 250) if input_coords else 240
+                inp_y = input_coords[1] if input_coords else 300
                 sub_x = submit_coords[0] if submit_coords else 540
-                sub_y = submit_coords[1] if submit_coords else 1180
+                sub_y = submit_coords[1] if submit_coords else 510
                 
-                # Execute keyboard hide, input tap, clear, type guess, & tap Crack It button
+                # Execute focus Box 1 tap, 8x clear backspaces, input full 5-char guess, & tap Crack It button
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input keyevent 111 && input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
+                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input text {next_guess} && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
                 # Wait 0.45s for feedback animation to settle on screen
                 time.sleep(0.45)
                 
-                # Try reading feedback up to 3 times (hiding soft keyboard if open)
+                # Try reading feedback up to 3 times
                 correct = None
                 wrong = None
                 clean_ocr_text = ""
@@ -312,9 +312,6 @@ def main():
                         logger.info(f"📊 Extracted screen feedback: {correct} correct, {wrong} wrong for '{next_guess}'")
                         break
                     else:
-                        # Auto-hide soft keyboard on attempt 1 if feedback text was covered by GBoard!
-                        if attempt == 0:
-                            subprocess.run(adb_cmd_prefix() + ["shell", "input keyevent 111"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         time.sleep(0.3)
                         
                 if not in_solving_loop:
