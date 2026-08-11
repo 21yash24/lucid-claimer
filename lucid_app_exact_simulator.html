@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucid App Giveaway Exact Simulator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: #05070a;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .phone-frame {
+            width: 380px;
+            height: 780px;
+            background-color: #0b0e14;
+            border-radius: 40px;
+            border: 8px solid #1f2937;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .status-bar {
+            height: 35px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #9ca3af;
+        }
+
+        .header {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            border-bottom: 1px solid #161e2e;
+        }
+
+        .header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            flex: 1;
+            text-align: center;
+            margin-right: 24px;
+        }
+
+        .content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+
+        .card {
+            width: 100%;
+            background: rgba(16, 24, 38, 0.8);
+            border: 1px solid #1e293b;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .card-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: #f59e0b;
+            margin-bottom: 12px;
+        }
+
+        .spots-badge {
+            display: inline-block;
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .input-label {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 16px;
+        }
+
+        .boxes-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+        }
+
+        .code-box {
+            width: 52px;
+            height: 58px;
+            background-color: #0f172a;
+            border: 2px solid #00e676;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: 700;
+            color: #00e676;
+            text-align: center;
+            text-transform: uppercase;
+            outline: none;
+            caret-color: #00e676;
+            transition: all 0.15s ease;
+        }
+
+        .code-box:focus {
+            border-color: #38bdf8;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+        }
+
+        .feedback-banner {
+            width: 100%;
+            background-color: #0d1b2a;
+            border: 1px solid #1e3a8a;
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: #60a5fa;
+            font-weight: 600;
+            margin-bottom: 24px;
+            min-height: 52px;
+        }
+
+        .feedback-banner .bulb {
+            font-size: 18px;
+        }
+
+        .submit-btn {
+            width: 100%;
+            height: 52px;
+            background: linear-gradient(135deg, #00e676 0%, #00c853 100%);
+            color: #05070a;
+            border: none;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(0, 230, 118, 0.3);
+        }
+
+        .submit-btn:disabled {
+            background: #1e293b;
+            color: #64748b;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .qualify-text {
+            font-size: 11px;
+            color: #d97706;
+            text-align: center;
+            margin-top: 16px;
+            line-height: 1.4;
+        }
+
+        .debug-panel {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid #334155;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 11px;
+            color: #a7f3d0;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .debug-panel button {
+            background: #0284c7;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-frame">
+        <div class="status-bar">
+            <span>22:50</span>
+            <span>📶 100%</span>
+        </div>
+
+        <div class="header">
+            <span style="font-size: 18px; cursor: pointer;">←</span>
+            <h2>Giveaway</h2>
+        </div>
+
+        <div class="content">
+            <div class="card">
+                <div class="card-icon">🎁</div>
+                <div class="card-title">Crack the Code 🔐</div>
+                <div class="card-subtitle">Alphanumeric code</div>
+                <div class="spots-badge">1 / 1 spots left</div>
+            </div>
+
+            <div class="input-label">Enter the 5-digit code</div>
+
+            <!-- EXACT 5 REACT NATIVE INPUT BOXES -->
+            <div class="boxes-container">
+                <input type="text" maxlength="1" class="code-box" id="box1" autofocus autocomplete="off">
+                <input type="text" maxlength="1" class="code-box" id="box2" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box" id="box3" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box" id="box4" autocomplete="off">
+                <input type="text" maxlength="1" class="code-box" id="box5" autocomplete="off">
+            </div>
+
+            <div class="feedback-banner" id="feedbackBanner">
+                <span class="bulb">💡</span>
+                <span id="feedbackText">Try guessing the 5-character code!</span>
+            </div>
+
+            <button class="submit-btn" id="submitBtn" onclick="submitGuess()">
+                <span>🔓</span> <span id="btnText">Crack It</span>
+            </button>
+
+            <div class="qualify-text">
+                To qualify for giveaways you must be following Lucid on X, Discord and Instagram.
+            </div>
+        </div>
+
+        <div class="debug-panel">
+            <span>Secret: <b id="secretDisplay">...</b></span>
+            <button onclick="newSecret()">New Code</button>
+        </div>
+    </div>
+
+    <script>
+        const boxes = [
+            document.getElementById('box1'),
+            document.getElementById('box2'),
+            document.getElementById('box3'),
+            document.getElementById('box4'),
+            document.getElementById('box5')
+        ];
+
+        let SECRET_CODE = "";
+        let isCooldown = false;
+        let cooldownTimer = null;
+
+        const CHAR_POOL = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+        function newSecret() {
+            SECRET_CODE = "";
+            for (let i = 0; i < 5; i++) {
+                SECRET_CODE += CHAR_POOL.charAt(Math.floor(Math.random() * CHAR_POOL.length));
+            }
+            document.getElementById('secretDisplay').innerText = SECRET_CODE;
+            clearBoxes();
+            document.getElementById('feedbackText').innerText = "Try guessing the 5-character code!";
+        }
+
+        function clearBoxes() {
+            boxes.forEach(box => box.value = "");
+            boxes[0].focus();
+        }
+
+        // React Native Segmented Input Auto-Advance Simulation (30ms focus transition delay)
+        boxes.forEach((box, idx) => {
+            box.addEventListener('input', (e) => {
+                box.value = box.value.toUpperCase();
+                if (box.value && idx < 4) {
+                    setTimeout(() => {
+                        boxes[idx + 1].focus();
+                    }, 30);
+                }
+            });
+
+            box.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !box.value && idx > 0) {
+                    boxes[idx - 1].focus();
+                }
+            });
+        });
+
+        function calculateFeedback(cand, target) {
+            let correct = 0;
+            let c_unmatched = [];
+            let t_unmatched = [];
+
+            for (let i = 0; i < 5; i++) {
+                if (cand[i] === target[i]) {
+                    correct++;
+                } else {
+                    c_unmatched.push(cand[i]);
+                    t_unmatched.push(target[i]);
+                }
+            }
+
+            let wrong = 0;
+            for (let ch of c_unmatched) {
+                let pos = t_unmatched.indexOf(ch);
+                if (pos !== -1) {
+                    wrong++;
+                    t_unmatched.splice(pos, 1);
+                }
+            }
+            return { correct, wrong };
+        }
+
+        function submitGuess() {
+            if (isCooldown) return;
+
+            let guess = boxes.map(b => b.value.toUpperCase()).join('');
+            if (guess.length < 5) {
+                document.getElementById('feedbackText').innerText = "Please enter all 5 characters!";
+                return;
+            }
+
+            if (guess === SECRET_CODE) {
+                document.getElementById('feedbackText').innerText = "🎉 Congratulations! You cracked the code and WON!";
+                document.getElementById('feedbackBanner').style.backgroundColor = "rgba(0, 230, 118, 0.2)";
+                document.getElementById('feedbackBanner').style.borderColor = "#00e676";
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('btnText').innerText = "Puzzle Solved!";
+                return;
+            }
+
+            let { correct, wrong } = calculateFeedback(guess, SECRET_CODE);
+            document.getElementById('feedbackText').innerText = `${correct} correct spot, ${wrong} wrong spot — try again!`;
+
+            // Start 3-second button cooldown
+            isCooldown = true;
+            let btn = document.getElementById('submitBtn');
+            let btnText = document.getElementById('btnText');
+            btn.disabled = true;
+
+            let secondsLeft = 3;
+            btnText.innerText = `Wait ${secondsLeft}s`;
+
+            cooldownTimer = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft > 0) {
+                    btnText.innerText = `Wait ${secondsLeft}s`;
+                } else {
+                    clearInterval(cooldownTimer);
+                    isCooldown = false;
+                    btn.disabled = false;
+                    btnText.innerText = "Crack It";
+                }
+            }, 1000);
+        }
+
+        // Initialize on load
+        newSecret();
+    </script>
+</body>
+</html>
