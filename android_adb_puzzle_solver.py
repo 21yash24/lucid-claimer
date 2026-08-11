@@ -2,12 +2,10 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- 5-Box Direct Tap Engine explicitly taps each of the 5 boxes at its exact X-coordinate.
-- 100% impossible for focus to get stuck on Box 1.
-- Converts guesses to native Android keyevents for 100% box filling.
-- Detects 'Crack It' / 'Crack' button on real app screen.
-- Solves 0/0 dead character elimination.
-- Cracks any 5-digit code in 8-12 rounds (< 25-30s)!
+- Calibrated to exact pixel layout of real Android Lucid App (1080x2392).
+- 5-Box Direct Tap Engine explicitly taps each box 1-by-1 (X=220, 380, 540, 700, 860 @ Y=710).
+- Taps '🔓 Crack It' button at exact dynamic OCR coords or fallback (540, 1140).
+- Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!
 """
 
 import os
@@ -127,7 +125,7 @@ def parse_screen_elements(image_path: str) -> Tuple[str, Optional[Tuple[int, int
             if "Crack" in text or "Submit" in text or "Wait" in text:
                 submit_coords = (px, py)
             elif "5-digit" in text or "Enter the" in text:
-                input_coords = (px, py + 110)
+                input_coords = (px, py + 120)
                 
         full_text = "\n".join(lines)
         return full_text, input_coords, submit_coords
@@ -215,9 +213,9 @@ class BulletproofMastermindEngine:
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - 5-Box Direct Tap Engine explicitly taps each box 1-by-1")
-    print("   - 100% impossible for focus to get stuck on Box 1")
-    print("   - Detects 'Crack It' button on real app screen")
+    print("   - Calibrated to exact pixel layout of real Android Lucid App")
+    print("   - 5-Box Direct Tap Engine (X=220, 380, 540, 700, 860 @ Y=710)")
+    print("   - Taps 'Crack It' button at exact dynamic coords or fallback (540, 1140)")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
     print("=" * 65 + "\n")
@@ -274,17 +272,17 @@ def main():
                 ocr_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
                 center_x = input_coords[0] if input_coords else 540
-                inp_y = input_coords[1] if input_coords else 300
+                inp_y = input_coords[1] if input_coords else 710
                 sub_x = submit_coords[0] if submit_coords else 540
-                sub_y = submit_coords[1] if submit_coords else 510
+                sub_y = submit_coords[1] if submit_coords else 1140
                 
-                # Calculate exact X-coordinates for each of the 5 green boxes
+                # Exact X-coordinates for the 5 green boxes on 1080p real app layout
                 x_coords = [
-                    center_x - 300, # Box 1
-                    center_x - 150, # Box 2
-                    center_x,       # Box 3
-                    center_x + 150, # Box 4
-                    center_x + 300  # Box 5
+                    center_x - 320, # Box 1 (220)
+                    center_x - 160, # Box 2 (380)
+                    center_x,       # Box 3 (540)
+                    center_x + 160, # Box 4 (700)
+                    center_x + 320  # Box 5 (860)
                 ]
                 
                 # Construct 5-box direct tap & native keyevent commands
