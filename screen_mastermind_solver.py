@@ -24,22 +24,28 @@ logger = logging.getLogger("ScreenSolver")
 
 CHAR_SET = string.digits + string.ascii_uppercase  # 0-9 and A-Z
 
-from PIL import ImageGrab
+from Quartz import CGWindowListCreateImage, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault, CGRectInfinite, CGImageGetWidth, CGImageGetHeight, CGImageGetDataProvider, CGDataProviderCopyData
+from PIL import Image
 
 def get_screen_ocr_text() -> str:
     """
-    Captures screenshot of Mac display using PIL.ImageGrab and runs Apple Vision OCR.
+    Captures screenshot of Mac display using Quartz CoreGraphics and runs Apple Vision OCR.
     Returns extracted text string.
     """
     screenshot_path = os.path.join(os.path.dirname(__file__), "tmp_images", "screen_ocr_tmp.png")
     os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
     
-    # Take screenshot using PIL ImageGrab
+    # Native Quartz macOS Screen Capture (0 CLI calls, 0 errors)
     try:
-        img = ImageGrab.grab()
-        img.save(screenshot_path)
+        cg_img = CGWindowListCreateImage(CGRectInfinite, kCGWindowListOptionOnScreenOnly, kCGNullWindowID, kCGWindowImageDefault)
+        if cg_img:
+            w = CGImageGetWidth(cg_img)
+            h = CGImageGetHeight(cg_img)
+            data = CGDataProviderCopyData(CGImageGetDataProvider(cg_img))
+            img = Image.frombytes('RGBA', (w, h), data, 'raw', 'BGRA')
+            img.save(screenshot_path)
     except Exception as e:
-        logger.error(f"⚠️ Screenshot grab error: {e}")
+        logger.error(f"⚠️ Quartz screenshot capture error: {e}")
         return ""
     
     # Run Apple Vision OCR via Swift
