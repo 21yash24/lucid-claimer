@@ -224,15 +224,13 @@ def main():
                 round_num += 1
                 logger.info(f"👉 [Round {round_num}] Submitting guess '{next_guess}' to phone...")
                 
-                inp_x = input_coords[0] if input_coords else 540
-                inp_y = input_coords[1] if input_coords else 1270
                 sub_x = submit_coords[0] if submit_coords else 540
-                sub_y = submit_coords[1] if submit_coords else 1690
+                sub_y = submit_coords[1] if submit_coords else 1030
                 
-                # Execute focus, clear, type, hide keyboard, & tap submit in ONE BATCHED COMMAND
+                # Clear text, type guess, & tap submit in ONE BATCHED COMMAND (NO TAP ON INPUT BOX -> NO KEYBOARD POPUP!)
                 batch_cmd = adb_cmd_prefix() + [
                     "shell",
-                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
+                    f"input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
                 ]
                 subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
@@ -243,30 +241,33 @@ def main():
                 capture_phone_screenshot(shot_path)
                 post_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
+                # Sanitize OCR text (replace letter 'O'/'o' with digit '0')
+                clean_ocr_text = re.sub(r'\b[Oo]\b', '0', post_text)
+                
                 # Check for Win / End signals or screen navigation away
-                if "Congratulations" in post_text or "WON" in post_text or "claimed" in post_text.lower():
+                if "Congratulations" in clean_ocr_text or "WON" in clean_ocr_text or "claimed" in clean_ocr_text.lower():
                     logger.info("🎉🎉🎉 PUZZLE CRACKED & WON ON PHONE SCREEN!")
                     print("\a\a\a")
                     in_solving_loop = False
                     break
                     
-                if not ("Crack the Code" in post_text or "5-digit code" in post_text or "spots left" in post_text):
+                if not ("Crack the Code" in clean_ocr_text or "5-digit code" in clean_ocr_text or "spots left" in clean_ocr_text):
                     logger.info("ℹ️ Puzzle screen no longer visible. Exiting solver loop...")
                     in_solving_loop = False
                     break
                     
                 correct = None
                 wrong = None
-                match = re.search(r"(\d+)\s*correct\s*spot[^\d]*(\d+)\s*wrong\s*spot", post_text, re.IGNORECASE)
+                match = re.search(r"(\d+)\s*correct\s*spot[^\d]*(\d+)\s*wrong\s*spot", clean_ocr_text, re.IGNORECASE)
                 if not match:
-                    match = re.search(r"(\d+)\s*correct[^\d]*(\d+)\s*wrong", post_text, re.IGNORECASE)
+                    match = re.search(r"(\d+)\s*correct[^\d]*(\d+)\s*wrong", clean_ocr_text, re.IGNORECASE)
                     
                 if match:
                     correct = int(match.group(1))
                     wrong = int(match.group(2))
                     logger.info(f"📊 Extracted screen feedback: {correct} correct, {wrong} wrong for '{next_guess}'")
                 else:
-                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'.")
+                    logger.warning(f"⚠️ Could not parse feedback text from screen for '{next_guess}'. Cleaned OCR Text snippet: {repr(clean_ocr_text[:150])}")
                     
                 # Calculate next optimal guess using Knuth Candidate Pruning
                 next_guess = solver.get_next_guess(next_guess, correct, wrong)
