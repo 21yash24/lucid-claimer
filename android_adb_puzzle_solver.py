@@ -276,7 +276,9 @@ def main():
             next_guess = "".join(random.choices(CHAR_SET, k=5))
             tested_guesses = set()
             
-            for round_num in range(1, 15):
+            round_num = 0
+            while in_solving_loop:
+                round_num += 1
                 tested_guesses.add(next_guess)
                 logger.info(f"👉 [Round {round_num}] Auto-submitting guess '{next_guess}' to phone...")
                 
@@ -299,10 +301,15 @@ def main():
                 capture_phone_screenshot(shot_path)
                 post_text, input_coords, submit_coords = parse_screen_elements(shot_path)
                 
-                # Check for Win / End signals
+                # Check for Win / End signals or screen navigation away
                 if "Congratulations" in post_text or "WON" in post_text or "claimed" in post_text.lower():
                     logger.info("🎉🎉🎉 PUZZLE CRACKED & WON ON PHONE SCREEN!")
                     print("\a\a\a")
+                    in_solving_loop = False
+                    break
+                    
+                if not ("Crack the Code" in post_text or "5-digit code" in post_text or "spots left" in post_text):
+                    logger.info("ℹ️ Puzzle screen no longer visible. Exiting solver loop...")
                     in_solving_loop = False
                     break
                     
