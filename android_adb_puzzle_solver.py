@@ -221,27 +221,26 @@ class BulletproofMastermindEngine:
 
 def submit_guess(guess: str, inp_y: int, sub_x: int, sub_y: int):
     """
-    THE KEY SEQUENCE THAT WORKS:
-      1. Tap Box 1 at exact X=210 (left edge of 5-box row) to focus & open keyboard.
-      2. Wait 300ms for focus to register.
-      3. Clear all 5 boxes with 7x backspace keyevents.
-      4. Wait 150ms.
-      5. `input text {guess}` — keyboard auto-advances through all 5 boxes.
-      6. Wait 300ms for all chars to settle.
-      7. Tap Crack It button.
+    FAST INPUT SEQUENCE (total ~310ms before Crack It tap):
+      1. Tap Box 1 at X=210 to focus & open keyboard.  [150ms wait]
+      2. Clear all 5 boxes with 7x backspace.           [50ms wait]
+      3. `input text {guess}` auto-advances all 5 boxes.[100ms wait]
+      4. Tap Crack It button.
+    NOTE: 3.1s BETWEEN-ROUND COOLDOWN is kept intact — do NOT remove it.
     """
     box1_x = 210   # exact X of Box 1 on 1080px wide screen
+
     # Step 1: Focus Box 1 — opens keyboard
     adb_shell(f"input tap {box1_x} {inp_y}")
-    time.sleep(0.3)
+    time.sleep(0.15)          # 150ms — minimum for focus to register
 
     # Step 2: Clear all 5 boxes
     adb_shell("input keyevent 67 67 67 67 67 67 67")
-    time.sleep(0.15)
+    time.sleep(0.05)          # 50ms — keyevents are instantaneous
 
     # Step 3: Type all 5 chars via keyboard auto-advance
     adb_shell(f"input text {guess}")
-    time.sleep(0.3)
+    time.sleep(0.1)           # 100ms — chars settle before Crack It tap
 
     # Step 4: Tap Crack It
     adb_shell(f"input tap {sub_x} {sub_y}")
@@ -325,7 +324,7 @@ def main():
                 submit_guess(next_guess, inp_y, sub_x, sub_y)
 
                 # ── Wait for feedback to animate ───────────────────────────────
-                time.sleep(0.7)
+                time.sleep(0.5)   # 500ms — enough for banner animation
 
                 # ── Read feedback (up to 3 retries) ───────────────────────────
                 correct, wrong, clean_ocr_text = None, None, ""
