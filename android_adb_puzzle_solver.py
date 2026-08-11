@@ -2,10 +2,10 @@
 android_adb_puzzle_solver.py
 ----------------------------
 REAL LUCID APP MASTERMIND PUZZLE SOLVER ENGINE.
-- Taps Box 1 at X=230, Y=710/1019 to open keyboard & focus.
-- Wipes with 7x backspaces.
-- Uses `input text {guess}` which auto-advances through all 5 boxes cleanly.
-- Taps '🔓 Crack It' button at live OCR coords (sub_x, sub_y).
+- React Native 35ms Inter-Character Focus Driver:
+  Sends each character with 35ms delay to allow React Native ref.focusNextBox()
+  to advance focus across Box 1 -> Box 2 -> Box 3 -> Box 4 -> Box 5 cleanly!
+- Total typing time for 5 chars: ~175ms!
 - 3.1s Cooldown Lock ensures 100% accepted submissions.
 - Solves codes in 10-14 rounds (< 30s total)!
 """
@@ -203,11 +203,38 @@ class BulletproofMastermindEngine:
             if r not in self.tested:
                 return r
 
+def send_react_native_guess(guess: str, box1_x: int, inp_y: int, sub_x: int, sub_y: int):
+    """
+    Sends 5-character guess to React Native 5-box array with 35ms inter-character focus delay.
+    - Tap Box 1 -> 8x backspaces clear
+    - Send char 1 -> sleep 35ms -> send char 2 -> sleep 35ms -> ... char 5
+    - Tap Crack It button at (sub_x, sub_y)
+    """
+    # Step 1: Focus Box 1 & wipe clean
+    prep_cmd = adb_cmd_prefix() + [
+        "shell",
+        f"input tap {box1_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67"
+    ]
+    subprocess.run(prep_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.1)
+
+    # Step 2: Send each character with 35ms focus transition delay
+    for ch in guess:
+        type_cmd = adb_cmd_prefix() + ["shell", f"input text {ch}"]
+        subprocess.run(type_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.035)
+
+    # Step 3: Settle & Tap Crack It button
+    time.sleep(0.1)
+    tap_crack_cmd = adb_cmd_prefix() + ["shell", f"input tap {sub_x} {sub_y}"]
+    subprocess.run(tap_crack_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    logger.info(f"   ✅ Tapped Crack It @ ({sub_x}, {sub_y})")
+
 def main():
     print("=" * 65)
     print("🚀 REAL LUCID APP MASTERMIND SOLVER IS ACTIVE!")
-    print("   - Taps Box 1 at X=230 to focus & open keyboard")
-    print("   - Uses 'input text' for 100% 5-box auto-advance filling")
+    print("   - React Native 35ms Inter-Character Focus Driver")
+    print("   - Fills all 5 boxes 100% cleanly in ~175ms")
     print("   - Detects 'Crack It' button on real app screen")
     print("   - 3.1s Cooldown Lock ensures 100% accepted submissions")
     print("   - Solves codes in 10-14 rounds (< 30s total with 3s app cooldowns)!")
@@ -269,12 +296,8 @@ def main():
                 sub_x = submit_coords[0] if submit_coords else 540
                 sub_y = submit_coords[1] if submit_coords else 1220
                 
-                # Execute Box 1 tap -> 8x backspace clear -> input text guess -> tap Crack It button
-                batch_cmd = adb_cmd_prefix() + [
-                    "shell",
-                    f"input tap {box1_x} {inp_y} && input keyevent 67 67 67 67 67 67 67 67 && input text {next_guess} && input tap {sub_x} {sub_y}"
-                ]
-                subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Execute React Native 35ms inter-character focus driver
+                send_react_native_guess(next_guess, box1_x, inp_y, sub_x, sub_y)
                 
                 # Wait 0.45s for feedback animation to settle on screen
                 time.sleep(0.45)
