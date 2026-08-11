@@ -24,17 +24,23 @@ logger = logging.getLogger("ADBPuzzleSolver")
 
 CHAR_SET = string.digits + string.ascii_uppercase  # 0-9 and A-Z
 
+# Determine ADB binary path
+ADB_BIN = "adb"
+local_adb = os.path.join(os.path.dirname(__file__), "platform-tools", "adb")
+if os.path.exists(local_adb):
+    ADB_BIN = local_adb
+
 def check_adb_connected() -> bool:
     """Checks if an Android device is connected via ADB."""
     try:
-        res = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=True)
+        res = subprocess.run([ADB_BIN, "devices"], capture_output=True, text=True, check=True)
         lines = [line for line in res.stdout.strip().split("\n") if line and not line.startswith("List of devices")]
         if lines:
             device_id = lines[0].split()[0]
             logger.info(f"📱 Connected to Android Device via ADB: {device_id}")
             return True
         else:
-            logger.warning("⚠️ No Android device detected via ADB! Please enable USB Debugging.")
+            logger.warning("⚠️ No Android device detected via ADB! Please check USB cable & enable USB Debugging.")
             return False
     except Exception as e:
         logger.error(f"❌ ADB binary check error: {e}")
@@ -44,7 +50,7 @@ def capture_phone_screenshot(save_path: str) -> bool:
     """Captures screenshot directly from Android phone via ADB."""
     try:
         with open(save_path, "wb") as f:
-            subprocess.run(["adb", "exec-out", "screencapture", "-p"], stdout=f, check=True)
+            subprocess.run([ADB_BIN, "exec-out", "screencapture", "-p"], stdout=f, check=True)
         return True
     except Exception as e:
         logger.error(f"⚠️ Screencapture error: {e}")
@@ -53,21 +59,21 @@ def capture_phone_screenshot(save_path: str) -> bool:
 def adb_type_text(text: str):
     """Types text directly into the active input box on the Android phone."""
     try:
-        subprocess.run(["adb", "shell", "input", "text", text], check=True)
+        subprocess.run([ADB_BIN, "shell", "input", "text", text], check=True)
     except Exception as e:
         logger.error(f"⚠️ ADB typing error: {e}")
 
 def adb_tap(x: int, y: int):
     """Taps specific (X, Y) coordinates on the Android phone screen."""
     try:
-        subprocess.run(["adb", "shell", "input", "tap", str(x), str(y)], check=True)
+        subprocess.run([ADB_BIN, "shell", "input", "tap", str(x), str(y)], check=True)
     except Exception as e:
         logger.error(f"⚠️ ADB tap error: {e}")
 
 def adb_key_enter():
     """Sends ENTER key event to Android phone."""
     try:
-        subprocess.run(["adb", "shell", "input", "keyevent", "66"], check=True)
+        subprocess.run([ADB_BIN, "shell", "input", "keyevent", "66"], check=True)
     except Exception as e:
         logger.error(f"⚠️ ADB keyevent error: {e}")
 
