@@ -47,10 +47,11 @@ def check_adb_connected() -> bool:
         return False
 
 def capture_phone_screenshot(save_path: str) -> bool:
-    """Captures screenshot directly from Android phone via ADB."""
+    """Captures screenshot directly from Android phone via ADB screencap and pull."""
     try:
-        with open(save_path, "wb") as f:
-            subprocess.run([ADB_BIN, "exec-out", "screencapture", "-p"], stdout=f, check=True)
+        remote_path = "/sdcard/lucid_screen.png"
+        subprocess.run([ADB_BIN, "shell", "screencap", "-p", remote_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([ADB_BIN, "pull", remote_path, save_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except Exception as e:
         logger.error(f"⚠️ Screencapture error: {e}")
@@ -77,18 +78,26 @@ def adb_key_enter():
     except Exception as e:
         logger.error(f"⚠️ ADB keyevent error: {e}")
 
+from Foundation import NSURL
+from Vision import VNRecognizeTextRequest, VNImageRequestHandler
+
 def run_vision_ocr(image_path: str) -> str:
-    """Runs Apple Vision OCR on captured screenshot."""
-    swift_bin = os.path.join(os.path.dirname(__file__), "vision_ocr")
-    if not os.path.exists(swift_bin):
-        swift_src = os.path.join(os.path.dirname(__file__), "vision_ocr.swift")
-        if os.path.exists(swift_src):
-            subprocess.run(["swiftc", "-O", swift_src, "-o", swift_bin], check=True)
-            
-    if os.path.exists(swift_bin):
-        res = subprocess.run([swift_bin, image_path], capture_output=True, text=True)
-        return res.stdout
-    return ""
+    """Runs Apple Vision OCR via PyObjC on captured phone screenshot."""
+    try:
+        img_url = NSURL.fileURLWithPath_(image_path)
+        req = VNRecognizeTextRequest.alloc().init()
+        req.setRecognitionLevel_(1)
+        req.setUsesLanguageCorrection_(False)
+        
+        handler = VNImageRequestHandler.alloc().initWithURL_options_(img_url, {})
+        handler.performRequests_error_([req], None)
+        
+        results = req.results() or []
+        lines = [obs.topCandidates_(1)[0].string() for obs in results if obs.topCandidates_(1)]
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"⚠️ Phone OCR Error: {e}")
+        return ""
 
 class MastermindSolver:
     def __init__(self):
