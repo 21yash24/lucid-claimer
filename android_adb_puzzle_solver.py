@@ -257,28 +257,21 @@ def main():
             next_guess = "".join(random.choices(CHAR_SET, k=5))
             
             for round_num in range(1, 15):
-                logger.info(f"👉 [Round {round_num}] Auto-typing guess '{next_guess}' into phone...")
+                logger.info(f"👉 [Round {round_num}] Auto-submitting guess '{next_guess}' to phone...")
                 
-                # 1. Tap input box & clear existing text
-                if input_coords:
-                    adb_tap(input_coords[0], input_coords[1])
-                    time.sleep(0.1)
-                adb_clear_input()
-                time.sleep(0.1)
+                inp_x = input_coords[0] if input_coords else 540
+                inp_y = input_coords[1] if input_coords else 1270
+                sub_x = submit_coords[0] if submit_coords else 540
+                sub_y = submit_coords[1] if submit_coords else 1690
                 
-                # 2. Type 5-digit guess
-                adb_type_text(next_guess)
-                time.sleep(0.15)
+                # Execute focus, clear, type, hide keyboard, & tap submit in ONE BATCHED COMMAND
+                batch_cmd = [
+                    ADB_BIN, "shell",
+                    f"input tap {inp_x} {inp_y} && input keyevent 67 67 67 67 67 67 && input text {next_guess} && input keyevent 111 && input tap {sub_x} {sub_y}"
+                ]
+                subprocess.run(batch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                # 3. Tap Submit button directly
-                if submit_coords:
-                    logger.info(f"👉 Tapping Submit Button @ {submit_coords}...")
-                    adb_tap(submit_coords[0], submit_coords[1])
-                else:
-                    # Fallback to standard bottom button location
-                    adb_tap(540, 1690)
-                
-                time.sleep(0.5)
+                time.sleep(0.3)
                 
                 # 4. Capture screenshot after submission & read feedback
                 capture_phone_screenshot(shot_path)
