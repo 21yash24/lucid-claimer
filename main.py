@@ -16,7 +16,6 @@ aiohttp.TCPConnector.__init__ = _patched_tcp_init
 
 import discord
 import config
-import random
 from parser import parse_discord_message_all
 from claimer import MultiAccountClaimer
 
@@ -37,27 +36,6 @@ client = discord.Client()
 claimed_codes = set()
 successful_claims = 0
 MAX_CLAIMS = 2  # Target 2 successful claims before auto-stopping
-
-async def claim_code_callback(code: str):
-    global successful_claims
-    if successful_claims >= MAX_CLAIMS:
-        return
-    if code in claimed_codes:
-        return
-        
-    claimed_codes.add(code)
-    logger.info(f"⚡ Attempting to claim code: {code}")
-    results = await claimer.claim_all_accounts(code)
-    
-    # Check if any claim succeeded
-    for res in results:
-        if isinstance(res, dict) and res.get("success"):
-            successful_claims += 1
-            logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
-            if successful_claims >= MAX_CLAIMS:
-                logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
-                await client.close()
-                return
 
 @client.event
 async def on_ready():
@@ -93,16 +71,15 @@ async def on_message(message):
             print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
             print("🔥" * 25 + "\n")
 
-            # Randomly select up to 3 codes maximum to attempt
-            selected_codes = random.sample(new_codes, min(3, len(new_codes)))
-            logger.info(f"🎲 Detected {len(new_codes)} new code(s). Randomly selected {len(selected_codes)} to claim sequentially.")
+            # Process codes immediately in order of appearance (prioritizing LBOX- codes)
+            logger.info(f"🚀 Detected {len(new_codes)} new code(s). Attempting top priority codes instantly!")
 
-            for idx, code in enumerate(selected_codes):
+            for idx, code in enumerate(new_codes[:5]):  # Try up to 5 codes max per drop
                 if successful_claims >= MAX_CLAIMS:
                     break
 
                 claimed_codes.add(code)
-                logger.info(f"🚀 [Code {idx+1}/{len(selected_codes)}] Claiming: '{code}'")
+                logger.info(f"⚡ [Attempt {idx+1}/{len(new_codes)}] INSTANT CLAIM: '{code}'")
                 results = await claimer.claim_all_accounts(code)
 
                 # Check if any claim succeeded
@@ -115,11 +92,9 @@ async def on_message(message):
                             await client.close()
                             return
 
-                # Wait 3-4 seconds (random) before trying the next code
-                if idx < len(selected_codes) - 1 and successful_claims < MAX_CLAIMS:
-                    delay = random.uniform(3.0, 4.0)
-                    logger.info(f"⏳ Waiting {delay:.1f}s before next code...")
-                    await asyncio.sleep(delay)
+                # Micro-pause 0.2s before trying next code in batch
+                if idx < len(new_codes) - 1 and successful_claims < MAX_CLAIMS:
+                    await asyncio.sleep(0.2)
 
 
 async def main():
@@ -132,8 +107,6 @@ async def main():
 
     # Initialize persistent HTTP session pool
     await claimer.initialize()
-
-    # X Monitor startup removed per user instruction to focus solely on Discord drops
 
     try:
         logger.info("Starting Discord gateway listener...")

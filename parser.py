@@ -1,35 +1,12 @@
 import re
 from typing import List, Optional
 
-# Regular expressions for common giveaway drop patterns
-# Match LBOX codes, CJ/WAWA/LUCID/FLEX codes, or general alphanumeric coupon codes (3-30 chars)
-CODE_PATTERNS = [
-    re.compile(r'\bLBOX[A-Z0-9_-]{2,30}\b', re.IGNORECASE),
-    re.compile(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Z0-9_-]{0,25}\b', re.IGNORECASE),
-    re.compile(r'\b[A-Z0-9]{4,25}\b', re.IGNORECASE),
-]
-
-
-
-# 2. URLs / Drop links e.g. https://lucidtrading.com/claim?code=XYZ
-URL_PATTERN = re.compile(r'https?://[^\s>"]+', re.IGNORECASE)
-
-def clean_discord_text(text: str) -> str:
-    """Removes Discord custom emoji syntax and normalizes smart quotes."""
-    if not text:
-        return ""
-    # Strip custom emoji syntax <:emojiname:123456789012345678>
-    text = re.sub(r'<a?:[a-zA-Z0-9_]+:\d+>', '', text)
-    # Replace smart quotes with standard spaces so word boundaries work
-    text = text.replace('“', ' ').replace('”', ' ').replace('"', ' ').replace("'", ' ').replace('‘', ' ').replace('’', ' ')
-    return text
-
 FORBIDDEN_WORDS = {
     "PAYMENT", "CANCEL", "CLOSE", "TERMS", "PRIVACY", "CREDIT", "CARD", 
     "CHECKOUT", "PROCEED", "SELECT", "SUMMARY", "LUCID", "TRADING", 
     "ACCOUNT", "PRODUCT", "SUBTOTAL", "TOTAL", "STATUS", "SUBMIT", "CODE",
     "OFF", "COPY", "EVAL", "25K", "50K", "100K", "150K", "LUCIDPRO", "LUCIDPRE",
-    "PRO", "PERCENT", "FREE"
+    "PRO", "PERCENT", "FREE", "ROBLOX", "SPOTIFY", "POKER", "GAME"
 }
 
 COMMON_ENGLISH_WORDS = {
@@ -46,39 +23,53 @@ COMMON_ENGLISH_WORDS = {
     "TWITTER", "PIC", "STATUS", "MEDIA", "PHOTO", "VIDEO", "LINK"
 }
 
+def clean_discord_text(text: str) -> str:
+    """Removes Discord custom emoji syntax and normalizes smart quotes."""
+    if not text:
+        return ""
+    text = re.sub(r'<a?:[a-zA-Z0-9_]+:\d+>', '', text)
+    text = text.replace('“', ' ').replace('”', ' ').replace('"', ' ').replace("'", ' ').replace('‘', ' ').replace('’', ' ')
+    return text
+
 def extract_all_giveaway_codes(text: str) -> List[str]:
     """
-    Scans raw text and extracts ALL unique giveaway codes or claim keys found.
-    Returns a list of unique codes.
+    Scans raw text and extracts ALL valid giveaway codes or claim keys found.
+    Prioritizes LBOX- prefix codes first.
     """
     if not text:
         return []
 
     cleaned_text = clean_discord_text(text)
-    # Remove URLs
-    cleaned_text = re.sub(r'https?://\S+|t\.co/\S+', '', cleaned_text, flags=re.IGNORECASE)
+    
+    # Ignore non-Lucid URLs (e.g. roblox, spotify, pokernow, etc.)
+    urls = re.findall(r'https?://\S+', cleaned_text)
+    for u in urls:
+        if not any(domain in u.lower() for domain in ['lucidtrading.com', 't.co', 'x.com']):
+            cleaned_text = cleaned_text.replace(u, ' ')
 
     extracted_codes = []
 
-    # 1. First search for explicit code patterns after keywords like 'code', 'coupon', 'use'
-    keyword_match = re.finditer(r'(?:code|coupon|use|drop|key|voucher)\s*[:=»"“\'`]?\s*([A-Za-z0-9_-]{3,30})', cleaned_text, re.IGNORECASE)
-    for m in keyword_match:
+    # 1. Highest Priority: Explicit LBOX- codes (e.g. LBOX-GXS9N44IUSJTVP5JWB)
+    lbox_matches = re.findall(r'\bLBOX-[A-Za-z0-9_-]{5,35}\b', cleaned_text, re.IGNORECASE)
+    for code in lbox_matches:
+        c_upper = code.upper()
+        if c_upper not in extracted_codes:
+            extracted_codes.append(c_upper)
+
+    # 2. Other common prefix codes (e.g. WAWA..., CJ..., LUCID..., FLEX...)
+    prefix_matches = re.findall(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Za-z0-9_-]{3,25}\b', cleaned_text, re.IGNORECASE)
+    for code in prefix_matches:
+        c_upper = code.upper()
+        if c_upper not in FORBIDDEN_WORDS and c_upper not in extracted_codes:
+            extracted_codes.append(c_upper)
+
+    # 3. Explicit keywords (code:, coupon:)
+    keyword_matches = re.finditer(r'(?:code|coupon|use|drop|key|voucher)\s*[:=»"“\'`]?\s*([A-Za-z0-9_-]{4,30})', cleaned_text, re.IGNORECASE)
+    for m in keyword_matches:
         c = m.group(1).strip().upper()
-        if c not in FORBIDDEN_WORDS and c not in COMMON_ENGLISH_WORDS and len(c) >= 3:
+        if c not in FORBIDDEN_WORDS and c not in COMMON_ENGLISH_WORDS and len(c) >= 4:
             if c not in extracted_codes:
                 extracted_codes.append(c)
-
-    # 2. Extract any standalone alphanumeric token (3-25 chars) that is not a forbidden or noise word
-    tokens = re.findall(r'\b[A-Za-z0-9_-]{3,25}\b', cleaned_text)
-    for token in tokens:
-        t_upper = token.upper()
-        if t_upper.isdigit() and len(t_upper) >= 15: # Ignore long numeric IDs
-            continue
-        if t_upper not in FORBIDDEN_WORDS and t_upper not in COMMON_ENGLISH_WORDS:
-            # Must contain at least 1 letter or digit
-            if any(ch.isalnum() for ch in t_upper):
-                if t_upper not in extracted_codes:
-                    extracted_codes.append(t_upper)
 
     return extracted_codes
 
@@ -108,33 +99,15 @@ def parse_discord_message_all(message_content: str, embeds: List[dict]) -> List[
                 if code not in found_codes:
                     found_codes.append(code)
 
+    return found_codes
+
 def generate_code_variations(code: str) -> List[str]:
-    """
-    Generates smart OCR error variations for ambiguous characters.
-    Handles common scribbled OCR confusions:
-      - E <-> F
-      - TT <-> Y7 / T <-> 7 / T <-> Y
-      - S <-> 5
-      - O <-> 0
-    Returns a list of unique code candidates starting with the original.
-    """
     variations = [code]
     c_upper = code.upper()
-
-    # Common replacement pairs
-    replacements = [
-        ('E', 'F'),
-        ('TT', 'Y7'),
-        ('QTT', 'QY7'),
-        ('S', '5'),
-        ('O', '0'),
-    ]
-
+    replacements = [('E', 'F'), ('TT', 'Y7'), ('QTT', 'QY7'), ('S', '5'), ('O', '0')]
     for old, new in replacements:
         if old in c_upper:
             alt = c_upper.replace(old, new)
             if alt not in variations:
                 variations.append(alt)
-
     return variations
-
