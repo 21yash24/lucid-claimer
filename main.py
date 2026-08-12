@@ -35,13 +35,13 @@ client = discord.Client()
 # Set of already claimed codes to prevent duplicate claims
 claimed_codes = set()
 successful_claims = 0
-MAX_CLAIMS = 2  # Target 2 successful claims before auto-stopping
+MAX_CLAIMS = 1  # Target 1 successful claim before auto-stopping for 24h limit
 
 @client.event
 async def on_ready():
     logger.info(f"✅ Discord Listener Connected as: {client.user} (ID: {client.user.id})")
     logger.info(f"👀 Monitoring Target Channel IDs: {', '.join(config.TARGET_CHANNEL_IDS)}")
-    logger.info(f"🛡️ Target: {MAX_CLAIMS} successful claims before auto-stop.")
+    logger.info(f"🛡️ Target: {MAX_CLAIMS} successful claim before auto-stop.")
 
 @client.event
 async def on_message(message):
