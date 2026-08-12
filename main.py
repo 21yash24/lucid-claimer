@@ -120,5 +120,39 @@ async def main():
     finally:
         await claimer.close()
 
+async def test_fake_code():
+    """Test claim flow with a fake code without Discord."""
+    errors = config.validate_config()
+    if errors:
+        logger.error("Configuration errors found in .env:")
+        for err in errors:
+            logger.error(f" - {err}")
+        return
+
+    fake_code = "LBOX_TEST123456789"
+    logger.info(f"🧪 TEST MODE: Claiming fake code '{fake_code}'")
+    logger.info(f"📡 API: {config.REDEMPTION_API_URL}")
+    logger.info(f"👥 Accounts: {len(config.ACCOUNT_TOKENS) + len(config.LUCID_ACCOUNTS)}")
+
+    await claimer.initialize()
+    results = await claimer.claim_all_accounts(fake_code)
+
+    for res in results:
+        if isinstance(res, dict):
+            status = "✅ SUCCESS" if res.get("success") else "❌ FAILED"
+            logger.info(f"Account #{res.get('account', '?')}: {status}")
+            if res.get("error"):
+                logger.info(f"  Error: {res['error']}")
+            if res.get("response"):
+                logger.info(f"  Response: {res['response']}")
+        else:
+            logger.error(f"Exception: {res}")
+    await claimer.close()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--test-fake":
+        asyncio.run(test_fake_code())
+    else:
+        asyncio.run(main())
