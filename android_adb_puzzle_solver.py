@@ -176,8 +176,9 @@ REAL_SUB_Y = 1200
 
 def send_guess_coordinate_mode(guess: str, is_simulator: bool):
     """
-    Sends guess using exact coordinates and hardware keyevents.
-    - Types box-by-box with 80ms focus settle delay to guarantee focus.
+    Sends guess using exact coordinates and input text per-box.
+    - Tap box -> clear via 6x backspace -> input text (single char) -> 80ms settle
+    - input text bypasses keyevent focus issues, works reliably with React Native
     """
     box_x = SIM_BOX_X if is_simulator else REAL_BOX_X
     inp_y = SIM_INP_Y if is_simulator else REAL_INP_Y
@@ -186,34 +187,32 @@ def send_guess_coordinate_mode(guess: str, is_simulator: bool):
     
     parts = []
     
-    # Step 1: Wipe all boxes
+    # Step 1: Full wipe (simulator: ESC, real: reverse backspace)
     if is_simulator:
-        # Simulator instant clear via ESC key
         parts.append("input keyevent 111")
         parts.append("sleep 0.1")
     else:
-        # Real app reverse backspace clear (tap Box 5, backspace 6 times, tap Box 1, backspace 1 time)
         parts.append(f"input tap {box_x[4]} {inp_y}")
         parts.append("sleep 0.05")
-        parts.append("input keyevent 67 67 67 67 67")
+        parts.append("input keyevent 67 67 67 67 67 67")
         parts.append("sleep 0.05")
         parts.append(f"input tap {box_x[0]} {inp_y}")
         parts.append("sleep 0.05")
         parts.append("input keyevent 67")
         parts.append("sleep 0.08")
-        
-    # Step 2: Input box-by-box with 80ms focus delay
+    
+    # Step 2: Fill each box via input text (reliable for React Native)
     for i, ch in enumerate(guess):
-        kc = CHAR_TO_KEYCODE.get(ch.upper())
-        if kc is not None:
-            parts.append(f"input tap {box_x[i]} {inp_y}")
+        parts.append(f"input tap {box_x[i]} {inp_y}")
+        parts.append("sleep 0.08")
+        # Clear box with 6x backspace (handles any pre-filled char)
+        parts.append("input keyevent 67 67 67 67 67 67")
+        parts.append("sleep 0.03")
+        # input text sends the char directly — no keyevent focus race
+        parts.append(f"input text {ch}")
+        if i < 4:
             parts.append("sleep 0.08")
-            parts.append("input keyevent 123 67")  # MOVE_END + BACKSPACE
-            parts.append("sleep 0.03")
-            parts.append(f"input keyevent {kc}")
-            if i < 4:
-                parts.append("sleep 0.08")
-                
+    
     # Step 3: Tap Crack It
     parts.append("sleep 0.15")
     parts.append(f"input tap {sub_x} {sub_y}")
