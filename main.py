@@ -4,6 +4,7 @@ import logging
 import ssl
 import certifi
 import aiohttp
+import random
 
 # Fix for macOS Python SSL Certificate verification bug
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -35,7 +36,7 @@ client = discord.Client()
 # Set of already claimed codes to prevent duplicate claims
 claimed_codes = set()
 successful_claims = 0
-MAX_CLAIMS = 1  # Target 1 successful claim before auto-stopping for 24h limit
+MAX_CLAIMS = 1  # 1 successful claim target per 24 hours
 
 @client.event
 async def on_ready():
@@ -56,7 +57,7 @@ async def on_message(message):
         # Convert embeds to list of dicts for parsing
         embeds_dict = [embed.to_dict() for embed in message.embeds] if message.embeds else []
 
-        # Parse message content and embeds for ALL giveaway drop codes
+        # Parse message content and embeds for giveaway drop codes
         codes = parse_discord_message_all(message.content, embeds_dict)
 
         if codes:
@@ -71,15 +72,16 @@ async def on_message(message):
             print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
             print("🔥" * 25 + "\n")
 
-            # Process codes immediately in order of appearance (prioritizing LBOX- codes)
-            logger.info(f"🚀 Detected {len(new_codes)} new code(s). Attempting top priority codes instantly!")
+            # Aug 11 Structure: Process codes sequentially with safe pacing to prevent Cloudflare 429
+            selected_codes = new_codes[:3]
+            logger.info(f"🎲 Detected {len(new_codes)} new code(s). Selected {len(selected_codes)} to claim sequentially.")
 
-            for idx, code in enumerate(new_codes[:5]):  # Try up to 5 codes max per drop
+            for idx, code in enumerate(selected_codes):
                 if successful_claims >= MAX_CLAIMS:
                     break
 
                 claimed_codes.add(code)
-                logger.info(f"⚡ [Attempt {idx+1}/{len(new_codes)}] INSTANT CLAIM: '{code}'")
+                logger.info(f"🚀 [Code {idx+1}/{len(selected_codes)}] Claiming: '{code}'")
                 results = await claimer.claim_all_accounts(code)
 
                 # Check if any claim succeeded
@@ -88,13 +90,15 @@ async def on_message(message):
                         successful_claims += 1
                         logger.info(f"🎉 SUCCESSFUL CLAIM ({successful_claims}/{MAX_CLAIMS})!")
                         if successful_claims >= MAX_CLAIMS:
-                            logger.info("🏆 Target of 2 successful claims reached! Shutting down listener.")
+                            logger.info("🏆 Target of 1 successful claim reached! Shutting down listener.")
                             await client.close()
                             return
 
-                # Micro-pause 0.2s before trying next code in batch
-                if idx < len(new_codes) - 1 and successful_claims < MAX_CLAIMS:
-                    await asyncio.sleep(0.2)
+                # Aug 11 Safe Delay (3.0-3.5s) between codes to prevent 429 rate limits
+                if idx < len(selected_codes) - 1 and successful_claims < MAX_CLAIMS:
+                    delay = random.uniform(3.0, 3.5)
+                    logger.info(f"⏳ Waiting {delay:.1f}s before next code...")
+                    await asyncio.sleep(delay)
 
 
 async def main():
