@@ -33,15 +33,14 @@ def clean_discord_text(text: str) -> str:
 
 def extract_all_giveaway_codes(text: str) -> List[str]:
     """
-    Scans raw text and extracts ALL valid giveaway codes or claim keys found.
-    Prioritizes LBOX- prefix codes first.
+    Scans raw text and extracts ONLY LBOX- prefix codes (Aug 11 behavior).
     """
     if not text:
         return []
 
     cleaned_text = clean_discord_text(text)
     
-    # Ignore non-Lucid URLs (e.g. roblox, spotify, pokernow, etc.)
+    # Ignore non-Lucid URLs
     urls = re.findall(r'https?://\S+', cleaned_text)
     for u in urls:
         if not any(domain in u.lower() for domain in ['lucidtrading.com', 't.co', 'x.com']):
@@ -49,27 +48,12 @@ def extract_all_giveaway_codes(text: str) -> List[str]:
 
     extracted_codes = []
 
-    # 1. Highest Priority: Explicit LBOX- codes (e.g. LBOX-GXS9N44IUSJTVP5JWB)
+    # ONLY LBOX- codes (Aug 11: priority 1 exclusively)
     lbox_matches = re.findall(r'\bLBOX-[A-Za-z0-9_-]{5,35}\b', cleaned_text, re.IGNORECASE)
     for code in lbox_matches:
         c_upper = code.upper()
         if c_upper not in extracted_codes:
             extracted_codes.append(c_upper)
-
-    # 2. Other common prefix codes (e.g. WAWA..., CJ..., LUCID..., FLEX...)
-    prefix_matches = re.findall(r'\b(?:WAWA|CJ|LUCID|FLEX|PROMO|EVAL|FREE)[A-Za-z0-9_-]{3,25}\b', cleaned_text, re.IGNORECASE)
-    for code in prefix_matches:
-        c_upper = code.upper()
-        if c_upper not in FORBIDDEN_WORDS and c_upper not in extracted_codes:
-            extracted_codes.append(c_upper)
-
-    # 3. Explicit keywords (code:, coupon:)
-    keyword_matches = re.finditer(r'(?:code|coupon|use|drop|key|voucher)\s*[:=»"“\'`]?\s*([A-Za-z0-9_-]{4,30})', cleaned_text, re.IGNORECASE)
-    for m in keyword_matches:
-        c = m.group(1).strip().upper()
-        if c not in FORBIDDEN_WORDS and c not in COMMON_ENGLISH_WORDS and len(c) >= 4:
-            if c not in extracted_codes:
-                extracted_codes.append(c)
 
     return extracted_codes
 
