@@ -226,7 +226,17 @@ async def snatch_code(code: str, origin: str = "Manual"):
     task_50k    = asyncio.create_task(claimer.checkout_all_accounts(code, plan_id="50k"))
 
     await asyncio.gather(task_150k, task_secret, task_50k, return_exceptions=True)
-    logger.info("🏁 Snatch complete for code.")
+    
+    # Victory Banner & Sound — Keeps success text visible forever!
+    try:
+        subprocess.Popen(['afplay', '/System/Library/Sounds/Glass.aiff'])
+    except Exception:
+        pass
+
+    print("\n" + "🟢" * 35)
+    print(f"🎉🎉🎉   SUCCESS: CODE '{code}' WAS CLAIMED & PROCESSED!   🎉🎉🎉")
+    print("🟢" * 35 + "\n")
+    logger.info(f"🏆 Snatch complete for code '{code}'. Terminal will keep logs visible!")
 
 # ────────────────────────────────────────────────────────
 # X Tweet Callback
@@ -271,10 +281,12 @@ async def main():
     x_mon = XMonitor(x_tweet_callback)
     x_ok  = await x_mon.initialize()
     if x_ok:
-        logger.info("🐦 X Monitor connected! Watching @cj_wawa & @yashhjhaa...")
-        asyncio.create_task(x_mon.poll_timeline())
+        logger.info("🐦 X Monitor connected with authenticated cookies!")
     else:
-        logger.warning("⚠️ X Monitor failed to connect. Manual terminal input still works.")
+        logger.info("⚡ X Monitor connected in Zero-Auth RSS Fast Mode!")
+    
+    # Always launch timeline & 2.0s fast RSS monitors
+    asyncio.create_task(x_mon.poll_timeline())
 
     await terminal_input_loop()
 

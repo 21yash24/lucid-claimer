@@ -85,6 +85,7 @@
             flex-direction: column;
             align-items: center;
             flex: 1;
+            position: relative;
         }
 
         /* Top Hero Card */
@@ -140,11 +141,28 @@
             text-align: center;
         }
 
+        /* Unified Input Overlay */
+        .input-wrapper {
+            position: relative;
+            margin-bottom: 24px;
+        }
+
+        .real-hidden-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.01;
+            z-index: 10;
+            font-size: 24px;
+            cursor: pointer;
+        }
+
         /* 5 Green Input Boxes */
         .boxes-row {
             display: flex;
             gap: 12px;
-            margin-bottom: 24px;
         }
 
         .code-box {
@@ -158,18 +176,14 @@
             color: #00e676;
             text-align: center;
             text-transform: uppercase;
-            outline: none;
-            caret-color: #00e676;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .code-box.empty {
             border: 2px dashed #22272e;
             color: #383e47;
-        }
-
-        .code-box:focus {
-            border-color: #00e676 !important;
-            border-style: solid !important;
         }
 
         /* Blue Feedback Banner */
@@ -293,13 +307,16 @@
 
             <div class="input-instruction">Enter the 5-digit code</div>
 
-            <!-- 5 Green Input Boxes -->
-            <div class="boxes-row">
-                <input type="text" maxlength="1" class="code-box empty" id="box1" autofocus autocomplete="off">
-                <input type="text" maxlength="1" class="code-box empty" id="box2" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box empty" id="box3" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box empty" id="box4" autocomplete="off">
-                <input type="text" maxlength="1" class="code-box empty" id="box5" autocomplete="off">
+            <!-- Unified Input Wrapper -->
+            <div class="input-wrapper">
+                <input type="text" maxlength="5" id="mainInput" class="real-hidden-input" autofocus autocomplete="off">
+                <div class="boxes-row">
+                    <div class="code-box empty" id="box1"></div>
+                    <div class="code-box empty" id="box2"></div>
+                    <div class="code-box empty" id="box3"></div>
+                    <div class="code-box empty" id="box4"></div>
+                    <div class="code-box empty" id="box5"></div>
+                </div>
             </div>
 
             <!-- Blue Feedback Banner -->
@@ -326,6 +343,7 @@
     </div>
 
     <script>
+        const mainInput = document.getElementById('mainInput');
         const boxes = [
             document.getElementById('box1'),
             document.getElementById('box2'),
@@ -351,49 +369,32 @@
         }
 
         function resetBoxes() {
-            boxes.forEach(b => {
-                b.value = "";
-                b.classList.add('empty');
-            });
-            boxes[0].focus();
+            mainInput.value = "";
+            updateVisualBoxes();
+            mainInput.focus();
         }
 
-        // React Native Segmented Input Simulation (35ms inter-character focus transition)
-        boxes.forEach((box, idx) => {
-            box.addEventListener('input', () => {
-                box.value = box.value.toUpperCase();
-                if (box.value) {
+        function updateVisualBoxes() {
+            let val = mainInput.value.toUpperCase();
+            boxes.forEach((box, idx) => {
+                if (idx < val.length) {
+                    box.innerText = val[idx];
                     box.classList.remove('empty');
-                    if (idx < 4) {
-                        setTimeout(() => {
-                            boxes[idx + 1].focus();
-                        }, 35);
-                    }
                 } else {
+                    box.innerText = "";
                     box.classList.add('empty');
                 }
             });
+        }
 
-            box.addEventListener('keydown', (e) => {
-                if (e.key === 'Backspace' && !box.value && idx > 0) {
-                    boxes[idx - 1].focus();
-                }
-            });
+        mainInput.addEventListener('input', () => {
+            mainInput.value = mainInput.value.toUpperCase();
+            updateVisualBoxes();
         });
 
-        // Instant reset via Escape key (Android KEYCODE_ESCAPE = 111)
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                resetBoxes();
-            }
-        });
-
-        // Ensure Box 1 receives focus on any ADB touch event
-        window.addEventListener('pointerdown', (e) => {
-            let active = document.activeElement;
-            if (!boxes.includes(active)) {
-                boxes[0].focus();
-            }
+        // Always keep mainInput focused when tapping anywhere
+        window.addEventListener('pointerdown', () => {
+            mainInput.focus();
         });
 
         function calculateFeedback(cand, target) {
@@ -424,7 +425,7 @@
         function submitGuess() {
             if (isCooldown) return;
 
-            let guess = boxes.map(b => b.value.toUpperCase()).join('');
+            let guess = mainInput.value.toUpperCase();
             if (guess.length < 5) {
                 document.getElementById('feedbackText').innerText = "Please enter all 5 characters!";
                 return;

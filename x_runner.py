@@ -77,17 +77,19 @@ async def claim_code_callback(codes: list, tweet_text: str = ""):
         claimed_codes.add(code)
         logger.info(f"👉 Processing candidate code: '{code}'...")
 
-        # Determine target plans from tweet text
+        # Determine target plans from tweet text (prioritizing 150k, 100k, 50k, 25k)
         text_lower = tweet_text.lower() if tweet_text else ""
-        if "100k" in text_lower:
-            plans_to_try = ["100k"]
-        elif "50k" in text_lower and "25k" not in text_lower:
-            plans_to_try = ["50k"]
-        elif "25k" in text_lower and "50k" not in text_lower:
-            plans_to_try = ["25k"]
+        if "150k" in text_lower or "150" in text_lower:
+            plans_to_try = ["150k", "50k"]
+        elif "100k" in text_lower:
+            plans_to_try = ["100k", "150k"]
+        elif "50k" in text_lower:
+            plans_to_try = ["50k", "150k"]
+        elif "25k" in text_lower:
+            plans_to_try = ["25k", "50k"]
         else:
-            # Try both plans in parallel — covers any ambiguous tweet
-            plans_to_try = ["50k", "25k"]
+            # Default to 150k first (for CJ Wawa's current drop), then 50k, 100k, 25k
+            plans_to_try = ["150k", "50k", "100k", "25k"]
 
         logger.info(f"🎯 Plans to try: {plans_to_try}")
 
