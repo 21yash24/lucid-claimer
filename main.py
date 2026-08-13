@@ -72,9 +72,15 @@ async def on_message(message):
             print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
             print("🔥" * 25 + "\n")
 
-            # Aug 11 Structure: Process codes sequentially with safe pacing to prevent Cloudflare 429
-            selected_codes = new_codes[:3]
-            logger.info(f"🎲 Detected {len(new_codes)} new code(s). Selected {len(selected_codes)} to claim sequentially.")
+            # Randomly choose up to 3 unique codes instead of always taking the first 3.
+            # random.sample() selects without replacement, so a code cannot be selected twice
+            # within this claiming sequence.
+            selection_count = min(3, len(new_codes))
+            selected_codes = random.sample(new_codes, selection_count)
+            logger.info(
+                f"🎲 Detected {len(new_codes)} new code(s). "
+                f"Randomly selected {len(selected_codes)} to claim: {selected_codes}"
+            )
 
             for idx, code in enumerate(selected_codes):
                 if successful_claims >= MAX_CLAIMS:
