@@ -29,6 +29,19 @@ LUCID_PASSWORD = os.getenv("LUCID_PASSWORD", "").strip()
 if LUCID_EMAIL and LUCID_PASSWORD and not any(acc[0] == LUCID_EMAIL for acc in LUCID_ACCOUNTS):
     LUCID_ACCOUNTS.append((LUCID_EMAIL, LUCID_PASSWORD))
 
+# Image scanning: author(s) whose image drops should be OCR'd for codes
+raw_image_authors = os.getenv("IMAGE_AUTHORS", "leothetiger").strip()
+IMAGE_AUTHORS = [name.strip().lower() for name in raw_image_authors.split(",") if name.strip()]
+IMAGE_DIR = os.getenv("IMAGE_DIR", "tmp_images").strip()
+
+# Max total claim attempts per drop (base codes + OCR-correction variants).
+# Keeps rate-limit risk low while still rescuing OCR near-misses.
+MAX_CLAIM_ATTEMPTS = int(os.getenv("MAX_CLAIM_ATTEMPTS", "12").strip())
+
+# Gemini Vision OCR (used when GEMINI_API_KEY is set — most accurate engine)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+
 # X (Twitter) Scraper Settings
 X_USERNAME = os.getenv("X_USERNAME", "").strip()
 X_PASSWORD = os.getenv("X_PASSWORD", "").strip()

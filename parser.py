@@ -33,7 +33,7 @@ def clean_discord_text(text: str) -> str:
 
 def extract_all_giveaway_codes(text: str) -> List[str]:
     """
-    Scans raw text and extracts ONLY LBOX- prefix codes (Aug 11 behavior).
+    Scans raw text and extracts LUCID- and LBOX- prefix codes.
     """
     if not text:
         return []
@@ -48,9 +48,9 @@ def extract_all_giveaway_codes(text: str) -> List[str]:
 
     extracted_codes = []
 
-    # ONLY LBOX- codes (Aug 11: priority 1 exclusively)
-    lbox_matches = re.findall(r'\bLBOX-[A-Za-z0-9_-]{5,35}\b', cleaned_text, re.IGNORECASE)
-    for code in lbox_matches:
+    # LUCID- and LBOX- codes (deduped, upper-cased)
+    code_matches = re.findall(r'\b(?:LUCID|LBOX)-[A-Za-z0-9_-]{5,35}\b', cleaned_text, re.IGNORECASE)
+    for code in code_matches:
         c_upper = code.upper()
         if c_upper not in extracted_codes:
             extracted_codes.append(c_upper)
@@ -86,12 +86,52 @@ def parse_discord_message_all(message_content: str, embeds: List[dict]) -> List[
     return found_codes
 
 def generate_code_variations(code: str) -> List[str]:
+    """
+    Generates plausible OCR-correction variations for a code, handling the
+    character confusions tesseract commonly makes on giveaway code fonts
+    (0/O, 5/S, 1/I/l, 7/Z/T, 2/Z, 6/G, 8/B, Q/O). Tries single-char fixes
+    first, then pairs, capped at 24 variants. The original code is first.
+    """
     variations = [code]
     c_upper = code.upper()
-    replacements = [('E', 'F'), ('TT', 'Y7'), ('QTT', 'QY7'), ('S', '5'), ('O', '0')]
-    for old, new in replacements:
-        if old in c_upper:
-            alt = c_upper.replace(old, new)
-            if alt not in variations:
-                variations.append(alt)
+
+    confusion_sets = [
+        {'0', 'O'},
+        {'5', 'S'},
+        {'1', 'I', 'l'},
+        {'7', 'Z', 'T'},
+        {'2', 'Z'},
+        {'6', 'G'},
+        {'8', 'B'},
+        {'Q', 'O', '0'},
+    ]
+
+    # (char index, replacement chars) for every ambiguous position
+    ambiguous = []
+    for idx, ch in enumerate(c_upper):
+        for group in confusion_sets:
+            if ch in group:
+                ambiguous.append((idx, sorted(group - {ch})))
+                break
+
+    from itertools import combinations, product
+
+    def build(fix_positions):
+        for combo in product(*[ambiguous[p][1] for p in fix_positions]):
+            chars = list(c_upper)
+            for p, rep in zip(fix_positions, combo):
+                chars[ambiguous[p][0]] = rep
+            v = ''.join(chars)
+            if v not in variations:
+                variations.append(v)
+                if len(variations) >= 24:
+                    return False
+        return True
+
+    # Prioritize the most likely single fixes, then pairs of fixes
+    for fix_count in (1, 2):
+        for positions in combinations(range(len(ambiguous)), fix_count):
+            if not build(positions):
+                return variations
+
     return variations
