@@ -81,14 +81,17 @@ async def scan_image_codes(message) -> list:
     return found_codes
 
 
-async def process_codes(codes: list):
-    """Shared claim flow: dedupe, print alert, then claim sequentially with safe pacing."""
+async def process_codes(codes: list, ocr_codes: list = None):
+    """Shared claim flow: dedupe, print alert, then claim sequentially with safe pacing.
+    OCR-scanned codes get correction variants (they may contain OCR misreads); plain
+    text codes are claimed exactly as typed."""
     global successful_claims
     if successful_claims >= MAX_CLAIMS:
         return
 
     # Filter out already claimed codes
     new_codes = [c for c in codes if c not in claimed_codes]
+    ocr_set = set(ocr_codes or [])
     if not new_codes:
         return
 
@@ -114,13 +117,19 @@ async def process_codes(codes: list):
         if code not in claim_queue:
             claim_queue.append(code)
 
-    # Single-fix variants per code, in priority order
+    # Single-fix variants per code, in priority order. Only OCR-scanned codes get
+    # variants — plain text codes are exact and claim once as typed. Gemini is
+    # accurate, so the base extraction usually claims first; cap is a small buffer.
     per_code_variants = []
     for code in selected_codes:
+        if code not in ocr_set:
+            continue
         variants = []
         for variant in generate_code_variations(code):
             if variant not in claim_queue and variant not in variants:
                 variants.append(variant)
+            if len(variants) >= config.MAX_OCR_VARIANTS:
+                break
         per_code_variants.append(variants)
 
     # Round-robin interleave
@@ -186,16 +195,18 @@ async def on_message(message):
 
         # Parse message content and embeds for giveaway drop codes
         codes = parse_discord_message_all(message.content, embeds_dict)
+        ocr_codes = []
 
         # Scan image drops from configured authors (e.g. leothetiger)
         if message.attachments and is_target_author(message):
             image_codes = await scan_image_codes(message)
+            ocr_codes = list(image_codes)
             for code in image_codes:
                 if code not in codes:
                     codes.append(code)
 
         if codes:
-            await process_codes(codes)
+            await process_codes(codes, ocr_codes=ocr_codes)
 
 
 async def main():

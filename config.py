@@ -38,6 +38,10 @@ IMAGE_DIR = os.getenv("IMAGE_DIR", "tmp_images").strip()
 # Keeps rate-limit risk low while still rescuing OCR near-misses.
 MAX_CLAIM_ATTEMPTS = int(os.getenv("MAX_CLAIM_ATTEMPTS", "12").strip())
 
+# Max OCR-correction variants per OCR-scanned code. Gemini is accurate, so the
+# base extraction usually claims first try; this is just a small safety buffer.
+MAX_OCR_VARIANTS = int(os.getenv("MAX_OCR_VARIANTS", "2").strip())
+
 # Gemini Vision OCR (used when GEMINI_API_KEY is set — most accurate engine)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
