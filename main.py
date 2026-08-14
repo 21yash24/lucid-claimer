@@ -101,50 +101,43 @@ async def process_codes(codes: list, ocr_codes: list = None):
     print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
     print("🔥" * 25 + "\n")
 
-    # Aug 11 Structure: Process codes sequentially with safe pacing to prevent Cloudflare 429.
-    # When many codes are dropped, pick a random subset to claim.
-    if len(new_codes) > 3:
-        selected_codes = random.sample(new_codes, 3)
-    else:
-        selected_codes = new_codes[:3]
-    logger.info(f"🎲 Detected {len(new_codes)} new code(s). Randomly selected {len(selected_codes)} to claim sequentially.")
+    # Build ordered claim queue. Priority: plain-text codes (exact) first, then
+    # EVERY distinct OCR-extracted code (Gemini is accurate — the more real codes
+    # we try, the better our hit chance), then OCR-correction variants only to
+    # fill any leftover slots. Capped to limit rate-limit risk.
+    text_codes = [c for c in new_codes if c not in ocr_set]
+    ocr_codes = [c for c in new_codes if c in ocr_set]
 
-    # Build ordered claim queue: base OCR codes first, then single-char
-    # correction variants interleaved round-robin across all codes so each
-    # code's most likely fix gets a shot. Capped to limit rate-limit risk.
     claim_queue = []
-    for code in selected_codes:
+    for code in text_codes[:3] + ocr_codes:
         if code not in claim_queue:
             claim_queue.append(code)
 
-    # Single-fix variants per code, in priority order. Only OCR-scanned codes get
-    # variants — plain text codes are exact and claim once as typed. Gemini is
-    # accurate, so the base extraction usually claims first; cap is a small buffer.
-    per_code_variants = []
-    for code in selected_codes:
-        if code not in ocr_set:
-            continue
-        variants = []
-        for variant in generate_code_variations(code):
-            if variant not in claim_queue and variant not in variants:
-                variants.append(variant)
-            if len(variants) >= config.MAX_OCR_VARIANTS:
-                break
-        per_code_variants.append(variants)
+    # Variants only if we have fewer real codes than the attempt cap
+    if len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
+        per_code_variants = []
+        for code in ocr_codes:
+            variants = []
+            for variant in generate_code_variations(code):
+                if variant not in claim_queue and variant not in variants:
+                    variants.append(variant)
+                if len(variants) >= config.MAX_OCR_VARIANTS:
+                    break
+            per_code_variants.append(variants)
 
-    # Round-robin interleave
-    idx = 0
-    while len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
-        added = False
-        for variants in per_code_variants:
-            if idx < len(variants) and variants[idx] not in claim_queue:
-                claim_queue.append(variants[idx])
-                added = True
-            if len(claim_queue) >= config.MAX_CLAIM_ATTEMPTS:
+        # Round-robin interleave
+        idx = 0
+        while len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
+            added = False
+            for variants in per_code_variants:
+                if idx < len(variants) and variants[idx] not in claim_queue:
+                    claim_queue.append(variants[idx])
+                    added = True
+                if len(claim_queue) >= config.MAX_CLAIM_ATTEMPTS:
+                    break
+            if not added:
                 break
-        if not added:
-            break
-        idx += 1
+            idx += 1
     claim_queue = claim_queue[:config.MAX_CLAIM_ATTEMPTS]
     logger.info(f"🧬 Claim queue ({len(claim_queue)}): {claim_queue}")
 
