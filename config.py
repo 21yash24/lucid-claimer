@@ -53,8 +53,33 @@ X_EMAIL = os.getenv("X_EMAIL", "").strip()
 X_TARGET_USER = os.getenv("X_TARGET_USER", "cj_wawa").strip()
 X_POLL_INTERVAL = float(os.getenv("X_POLL_INTERVAL", "12.0").strip())
 
+# Second X account for twikit rotation (quota multiplier)
+X_ACCOUNT2_USERNAME = os.getenv("X_ACCOUNT2_USERNAME", "").strip()
+X_ACCOUNT2_PASSWORD = os.getenv("X_ACCOUNT2_PASSWORD", "").strip()
+X_ACCOUNT2_EMAIL = os.getenv("X_ACCOUNT2_EMAIL", "").strip()
+
+# Browser live-watch (PRIMARY real-time engine, zero API calls) — DESKTOP ONLY.
+# On phone/Termux there is no Chromium, so leave this OFF (0) there and rely on
+# Nitter RSS + twikit rotation + the direct API checkout path.
+X_USE_BROWSER = os.getenv("X_USE_BROWSER", "0").strip() in ("1", "true", "yes")
+raw_browser_targets = os.getenv("X_BROWSER_TARGETS", "").strip()
+X_BROWSER_TARGETS = [u.strip() for u in raw_browser_targets.split(",") if u.strip()] or [
+    u.strip() for u in X_TARGET_USER.split(",") if u.strip()
+]
+
+# Standalone snatcher plan default + checkout targets
+SNATCHER_PLAN_DEFAULT = os.getenv("SNATCHER_PLAN_DEFAULT", "25k").strip().lower()
+
+# DRY-RUN: when 1, the snatcher detects + OCRs + logs the code/plan it WOULD
+# checkout, but never fires the checkout endpoint. Use for safe demo testing.
+SNATCHER_DRY_RUN = os.getenv("SNATCHER_DRY_RUN", "0").strip() in ("1", "true", "yes")
+
 # Game Cracker Settings
 GUESS_DELAY = float(os.getenv("GUESS_DELAY", "3.1").strip())
+
+# Delay between claim attempts during a drop (seconds). Keep low for speed;
+# raise if you start seeing 429 rate-limits.
+CODE_CLAIM_DELAY = float(os.getenv("CODE_CLAIM_DELAY", "2.5").strip())
 
 
 def validate_config():
