@@ -108,10 +108,9 @@ async def process_codes(codes: list, ocr_codes: list = None):
     text_codes = [c for c in new_codes if c not in ocr_set]
     ocr_codes = [c for c in new_codes if c in ocr_set]
 
-    claim_queue = []
-    for code in text_codes[:3] + ocr_codes:
-        if code not in claim_queue:
-            claim_queue.append(code)
+    claim_queue = list(dict.fromkeys(text_codes + ocr_codes))
+    random.shuffle(claim_queue)
+    claim_queue = claim_queue[:config.MAX_CLAIM_ATTEMPTS]
 
     # Variants only if we have fewer real codes than the attempt cap
     if len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
@@ -161,9 +160,9 @@ async def process_codes(codes: list, ocr_codes: list = None):
                     await client.close()
                     return
 
-        # Aug 11 Safe Delay (3.0-3.5s) between codes to prevent 429 rate limits
+        # Inter-code delay (2.5-3.0s) to stay under rate limits
         if pos < len(claim_queue) - 1 and successful_claims < MAX_CLAIMS:
-            delay = random.uniform(3.0, 3.5)
+            delay = random.uniform(2.5, 3.0)
             logger.info(f"⏳ Waiting {delay:.1f}s before next code...")
             await asyncio.sleep(delay)
 
