@@ -5,6 +5,7 @@ import logging
 import ssl
 import certifi
 import aiohttp
+import random
 
 # Fix for macOS Python SSL Certificate verification bug
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -160,9 +161,9 @@ async def process_codes(codes: list, ocr_codes: list = None):
                     await client.close()
                     return
 
-        # Safe delay between codes to prevent 429 rate limits (configurable)
+        # Aug 11 Safe Delay (3.0-3.5s) between codes to prevent 429 rate limits
         if pos < len(claim_queue) - 1 and successful_claims < MAX_CLAIMS:
-            delay = config.CODE_CLAIM_DELAY
+            delay = random.uniform(3.0, 3.5)
             logger.info(f"⏳ Waiting {delay:.1f}s before next code...")
             await asyncio.sleep(delay)
 
@@ -187,18 +188,18 @@ async def on_message(message):
 
         # Parse message content and embeds for giveaway drop codes
         codes = parse_discord_message_all(message.content, embeds_dict)
+        ocr_codes = []
 
-        # Text codes are the fastest and most reliable — claim them FIRST,
-        # never waiting on slow OCR for the same message.
-        if codes:
-            await process_codes(codes, ocr_codes=[])
-
-        # Scan image drops from configured authors (e.g. leothetiger) only
-        # after text codes have been claimed, so OCR never blocks them.
+        # Scan image drops from configured authors (e.g. leothetiger)
         if message.attachments and is_target_author(message):
             image_codes = await scan_image_codes(message)
-            if image_codes:
-                await process_codes(image_codes, ocr_codes=list(image_codes))
+            ocr_codes = list(image_codes)
+            for code in image_codes:
+                if code not in codes:
+                    codes.append(code)
+
+        if codes:
+            await process_codes(codes, ocr_codes=ocr_codes)
 
 
 async def main():
