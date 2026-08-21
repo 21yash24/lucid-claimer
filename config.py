@@ -30,9 +30,14 @@ if LUCID_EMAIL and LUCID_PASSWORD and not any(acc[0] == LUCID_EMAIL for acc in L
     LUCID_ACCOUNTS.append((LUCID_EMAIL, LUCID_PASSWORD))
 
 # Image scanning: author(s) whose image drops should be OCR'd for codes
-raw_image_authors = os.getenv("IMAGE_AUTHORS", "leothetiger").strip()
+# Supports multiple Discord usernames separated by commas.
+raw_image_authors = os.getenv("IMAGE_AUTHORS", "leothetiger,tradorick").strip()
 IMAGE_AUTHORS = [name.strip().lower() for name in raw_image_authors.split(",") if name.strip()]
 IMAGE_DIR = os.getenv("IMAGE_DIR", "tmp_images").strip()
+
+# How long an account stays skipped after receiving HTTP 429.
+# A rate-limited account is NOT retried on subsequent codes during this window.
+RATE_LIMIT_COOLDOWN = float(os.getenv("RATE_LIMIT_COOLDOWN", "60").strip())
 
 # Max total claim attempts per drop (base codes + OCR-correction variants).
 # Keeps rate-limit risk low while still rescuing OCR near-misses.
