@@ -101,10 +101,8 @@ async def process_codes(codes: list, ocr_codes: list = None):
     print(f"🔥   SPOTTED NEW CODE(S) IN CHAT: {new_codes}   🔥")
     print("🔥" * 25 + "\n")
 
-    # Build ordered claim queue. Priority: plain-text codes (exact) first, then
-    # EVERY distinct OCR-extracted code (Gemini is accurate — the more real codes
-    # we try, the better our hit chance), then OCR-correction variants only to
-    # fill any leftover slots. Capped to limit rate-limit risk.
+    # Build a small randomized claim queue. Keep at most five total entries,
+    # including OCR-correction variants.
     text_codes = [c for c in new_codes if c not in ocr_set]
     ocr_codes = [c for c in new_codes if c in ocr_set]
 
@@ -112,7 +110,7 @@ async def process_codes(codes: list, ocr_codes: list = None):
     random.shuffle(claim_queue)
     claim_queue = claim_queue[:config.MAX_CLAIM_ATTEMPTS]
 
-    # Variants only if we have fewer real codes than the attempt cap
+    # Add OCR variants only if fewer than five real codes are available.
     if len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
         per_code_variants = []
         for code in ocr_codes:
@@ -122,12 +120,14 @@ async def process_codes(codes: list, ocr_codes: list = None):
                     variants.append(variant)
                 if len(variants) >= config.MAX_OCR_VARIANTS:
                     break
+            random.shuffle(variants)
             per_code_variants.append(variants)
 
-        # Round-robin interleave
+        # Round-robin interleave variants, then randomize the completed queue again.
         idx = 0
         while len(claim_queue) < config.MAX_CLAIM_ATTEMPTS:
             added = False
+            random.shuffle(per_code_variants)
             for variants in per_code_variants:
                 if idx < len(variants) and variants[idx] not in claim_queue:
                     claim_queue.append(variants[idx])
@@ -137,8 +137,10 @@ async def process_codes(codes: list, ocr_codes: list = None):
             if not added:
                 break
             idx += 1
+
+    random.shuffle(claim_queue)
     claim_queue = claim_queue[:config.MAX_CLAIM_ATTEMPTS]
-    logger.info(f"🧬 Claim queue ({len(claim_queue)}): {claim_queue}")
+    logger.info(f"🧬 Random claim queue ({len(claim_queue)}): {claim_queue}")
 
     for pos, code in enumerate(claim_queue):
         if successful_claims >= MAX_CLAIMS:
@@ -189,7 +191,7 @@ async def on_message(message):
         codes = parse_discord_message_all(message.content, embeds_dict)
         ocr_codes = []
 
-        # Scan image drops from configured authors (e.g. leothetiger)
+        # Scan image drops from configured authors
         if message.attachments and is_target_author(message):
             image_codes = await scan_image_codes(message)
             ocr_codes = list(image_codes)
