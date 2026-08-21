@@ -39,9 +39,9 @@ IMAGE_DIR = os.getenv("IMAGE_DIR", "tmp_images").strip()
 # A rate-limited account is NOT retried on subsequent codes during this window.
 RATE_LIMIT_COOLDOWN = float(os.getenv("RATE_LIMIT_COOLDOWN", "60").strip())
 
-# Max total claim attempts per drop (base codes + OCR-correction variants).
-# Keeps rate-limit risk low while still rescuing OCR near-misses.
-MAX_CLAIM_ATTEMPTS = int(os.getenv("MAX_CLAIM_ATTEMPTS", "12").strip())
+# Maximum number of codes/variants placed into the claim queue for each drop.
+# Kept deliberately small to reduce unnecessary requests.
+MAX_CLAIM_ATTEMPTS = int(os.getenv("MAX_CLAIM_ATTEMPTS", "5").strip())
 
 # Max OCR-correction variants per OCR-scanned code. Gemini is accurate, so the
 # base extraction usually claims first try; this is just a small safety buffer.
@@ -71,4 +71,3 @@ def validate_config():
     if not ACCOUNT_TOKENS and not LUCID_ACCOUNTS:
         errors.append("Either ACCOUNT_TOKENS or LUCID_ACCOUNTS credentials must be provided in .env")
     return errors
-
